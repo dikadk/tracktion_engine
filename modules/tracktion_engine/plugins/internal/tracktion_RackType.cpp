@@ -343,8 +343,8 @@ struct RackType::PluginRenderingInfo
 //==============================================================================
 struct RackType::RackPluginList  : public ValueTreeObjectList<RackType::PluginInfo>
 {
-    RackPluginList (RackType& t, const juce::ValueTree& parent)
-        : ValueTreeObjectList<PluginInfo> (parent), type (t)
+    RackPluginList (RackType& t, const juce::ValueTree& parentTree)
+        : ValueTreeObjectList<PluginInfo> (parentTree), type (t)
     {
         CRASH_TRACER
         callBlocking ([this] { this->rebuildObjects(); });
@@ -392,8 +392,8 @@ struct RackType::RackPluginList  : public ValueTreeObjectList<RackType::PluginIn
 
 struct RackType::ConnectionList  : public ValueTreeObjectList<RackConnection>
 {
-    ConnectionList (RackType& t, const juce::ValueTree& parent)
-        : ValueTreeObjectList<RackConnection> (parent), type (t)
+    ConnectionList (RackType& t, const juce::ValueTree& parentTree)
+        : ValueTreeObjectList<RackConnection> (parentTree), type (t)
     {
         CRASH_TRACER
         rebuildObjects();
@@ -1217,9 +1217,7 @@ void RackType::createInstanceForSideChain (Track& at, const BigInteger& channelM
         rack->wetGain->setParameter (0.0f, dontSendNotification);
         rack->dryGain->setParameter (1.0f, dontSendNotification);
 
-        for (SelectionManager::Iterator sm; sm.next();)
-            if (sm->isSelected (rack))
-                sm->refreshDetailComponent();
+        SelectionManager::refreshAllPropertyPanelsShowing (*rack);
     }
     else
     {
@@ -2000,8 +1998,8 @@ ModifierList& RackType::getModifierList() const noexcept
 //==============================================================================
 struct RackTypeList::ValueTreeList  : public ValueTreeObjectList<RackType>
 {
-    ValueTreeList (RackTypeList& l, const juce::ValueTree& parent)
-        : ValueTreeObjectList<RackType> (parent), list (l)
+    ValueTreeList (RackTypeList& l, const juce::ValueTree& parentTree)
+        : ValueTreeObjectList<RackType> (parentTree), list (l)
     {
         // NB: rebuildObjects() is called after construction so that the edit has a valid
         // list while they're being created
@@ -2204,8 +2202,15 @@ void RackType::valueTreeChildRemoved (ValueTree&, juce::ValueTree& c, int)
 }
 
 void RackType::valueTreeChildOrderChanged (ValueTree&, int, int)   {}
-void RackType::valueTreeParentChanged (ValueTree&)                 { triggerUpdate(); }
 void RackType::valueTreeRedirected (ValueTree&)                    { triggerUpdate(); }
+
+void RackType::valueTreeParentChanged (ValueTree&)
+{
+    if (! state.getParent().isValid())
+        hideWindowForShutdown();
+
+    triggerUpdate();
+}
 
 void RackType::valueTreePropertyChanged (ValueTree& v, const juce::Identifier& ident)
 {
@@ -2231,6 +2236,7 @@ void RackType::valueTreePropertyChanged (ValueTree& v, const juce::Identifier& i
 
 //==============================================================================
 RackType::WindowState::WindowState (RackType& r, juce::ValueTree windowStateTree)
-    : PluginWindowState (r.edit.engine), rack (r), state (std::move (windowStateTree))  {}
+    : PluginWindowState (r.edit), rack (r), state (std::move (windowStateTree))
+{}
 
 }

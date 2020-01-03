@@ -10,14 +10,15 @@
 namespace tracktion_engine
 {
 
-Envelope::Envelope()
+//==============================================================================
+ExpEnvelope::ExpEnvelope()
 {
     calculateAttackTime();
     calculateDecayTime();
     calculateReleaseTime();
 }
-	
-void Envelope::calculateAttackTime()
+
+void ExpEnvelope::calculateAttackTime()
 {
 	float samples = float (sampleRate * attackTime);
 
@@ -25,20 +26,20 @@ void Envelope::calculateAttackTime()
 	attackOffset = (1.0f + attackTCO) * (1.0f - attackCoeff);
 }
 
-void Envelope::calculateDecayTime()
+void ExpEnvelope::calculateDecayTime()
 {
 	float samples = float (sampleRate * decayTime);
-	
+
     decayCoeff = std::exp (-std::log ((1.0f + decayTCO) / decayTCO) / samples);
 	decayOffset = (sustainLevel - decayTCO) * (1.0f - decayCoeff);
 }
 
-void Envelope::calculateReleaseTime()
+void ExpEnvelope::calculateReleaseTime()
 {
     float samples = float (sampleRate * releaseTime);
 
     releaseCoeff = std::exp (-std::log ((1.0f + releaseTCO) / releaseTCO) / samples);
 	releaseOffset = -releaseTCO * (1.0f - releaseCoeff);
 }
-    
+
 }

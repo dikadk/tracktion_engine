@@ -11,6 +11,8 @@
 namespace tracktion_engine
 {
 
+class HostedAudioDeviceInterface;
+
 /**
 */
 class DeviceManager     : public juce::ChangeBroadcaster,
@@ -28,6 +30,21 @@ public:
                      int defaultNumOutputChannelsToOpen = 512);
     void closeDevices();
     void saveSettings();
+
+    /** If you are using the engine in a plugin or an application
+        that accesses the audio device directly, use this interface
+        to pass audio and midi to the DeviceManager.
+    */
+    HostedAudioDeviceInterface& getHostedAudioDeviceInterface();
+
+    /** Returns true if the hosted interface is available and in use. */
+    bool isHostedAudioDeviceInterfaceInUse() const;
+
+    /** Removes the hosted audio device.
+        You shouldn't normally need to call this but can be useful for running tests.
+        Afterwards, you'll need to call initialise again.
+    */
+    void removeHostedAudioDeviceInterface();
 
     //==============================================================================
     float getCpuUsage() const noexcept                  { return (float) currentCpuUsage; }
@@ -98,7 +115,7 @@ public:
     int getNumMidiInDevices() const;
     MidiInputDevice* getMidiInDevice (int index) const;
     MidiInputDevice* getDefaultMidiInDevice() const             { return getMidiInDevice (defaultMidiInIndex); }
-    
+
     void setDefaultMidiInDevice (int index);
 
     void broadcastStreamTimeToMidiDevices (double streamTime);
@@ -126,7 +143,7 @@ public:
 
     static juce::String getDefaultAudioInDeviceName (bool translated);
     static juce::String getDefaultMidiInDeviceName (bool translated);
-    
+
     juce::Result createVirtualMidiDevice (const juce::String& name);
     void deleteVirtualMidiDevice (VirtualMidiInputDevice*);
 
@@ -136,6 +153,7 @@ public:
 
     double getOutputLatencySeconds() const;
 
+    std::unique_ptr<HostedAudioDeviceInterface> hostedAudioDeviceInterface;
     juce::AudioDeviceManager deviceManager;
 
     juce::OwnedArray<MidiInputDevice, juce::CriticalSection> midiInputs;
@@ -168,6 +186,7 @@ public:
 
 private:
     struct WaveDeviceList;
+    struct ContextDeviceClearer;
     bool finishedInitialising = false;
     bool sendMidiTimecode = false;
 
@@ -185,6 +204,7 @@ private:
     int defaultWaveOutIndex = 0, defaultMidiOutIndex = 0, defaultWaveInIndex = 0, defaultMidiInIndex = 0;
 
     std::unique_ptr<WaveDeviceList> lastWaveDeviceList;
+    std::unique_ptr<ContextDeviceClearer> contextDeviceClearer;
 
     juce::CriticalSection contextLock;
     juce::Array<EditPlaybackContext*> activeContexts;

@@ -32,7 +32,7 @@ void float2string (float f, char* text, int len)
         decimals = 2;
     else
         decimals = 3;
-    
+
     String str (f, decimals);
     str.copyToUTF8 (text, (size_t)len);
 }
@@ -79,11 +79,11 @@ public:
     virtual void setProgramName(char *name)                       = 0;
     virtual VstInt32 getChunk (void** data, bool isPreset)                          { ignoreUnused (data, isPreset); return 0; };
     virtual VstInt32 setChunk (void* data, VstInt32 byteSize, bool isPreset)        { ignoreUnused (data, byteSize, isPreset); return 0; };
-    virtual float getParameter(VstInt32 index)                    = 0;
-    virtual void setParameter(VstInt32 index, float value)        = 0;
-    virtual void getParameterLabel(VstInt32 index, char *text)    = 0;
-    virtual void getParameterName(VstInt32 index, char *text)     = 0;
-    virtual void getParameterDisplay(VstInt32 index, char *text)  = 0;
+    virtual float getParameter(VstInt32 index)                                      { ignoreUnused (index); return 0; }
+    virtual void setParameter(VstInt32 index, float value)                          { ignoreUnused (index, value); }
+    virtual void getParameterLabel(VstInt32 index, char *text)                      { ignoreUnused (index, text); }
+    virtual void getParameterName(VstInt32 index, char *text)                       { ignoreUnused (index, text); }
+    virtual void getParameterDisplay(VstInt32 index, char *text)                    { ignoreUnused (index, text); }
     virtual VstInt32 canDo(char *text)                            = 0;
 
 protected:

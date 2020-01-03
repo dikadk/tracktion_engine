@@ -103,7 +103,10 @@ struct Edit::TreeWatcher   : public juce::ValueTree::Listener
             {
                 if (! edit.getTransport().isPlaying())
                 {
-                    edit.getTransport().ensureContextAllocated();
+                    if (v[IDs::endToEnd])
+                        edit.getTransport().ensureContextAllocated();
+                    else
+                        edit.getTransport().freePlaybackContext();
 
                     auto& ecm = edit.engine.getExternalControllerManager();
 
@@ -473,42 +476,47 @@ static int getNextInstanceId() noexcept
 }
 
 //==============================================================================
-Edit::Edit (Engine& e, juce::ValueTree editState, EditRole role,
-            LoadContext* sourceLoadContext, int numUndoLevelsToStore)
-    : engine (e),
+Edit::Edit (Options options)
+    : engine (options.engine),
       tempoSequence (*this),
-      state (editState),
+      state (options.editState),
       instanceId (getNextInstanceId()),
-      editProjectItemID (ProjectItemID::fromProperty (editState, IDs::projectID)),
-      loadContext (sourceLoadContext),
-      editRole (role)
+      editProjectItemID (options.editProjectItemID),
+      loadContext (options.loadContext),
+      editRole (options.role)
 {
     CRASH_TRACER
 
     jassert (state.isValid());
     jassert (state.hasType (IDs::EDIT));
-    jassert (editProjectItemID.isValid()); // is it ever OK for this to be invalid?
+    jassert (editProjectItemID.isValid()); // This must be valid or it won't be able to create temp files etc.
 
-    editFileRetriever = [this]() -> juce::File
-    {
-        if (auto item = ProjectManager::getInstance()->getProjectItem (*this))
-            return item->getSourceFile();
+    if (options.editFileRetriever)
+        editFileRetriever = std::move (options.editFileRetriever);
+    else
+        editFileRetriever = [this]() -> juce::File
+        {
+            if (auto item = ProjectManager::getInstance()->getProjectItem (*this))
+                return item->getSourceFile();
 
-        return {};
-    };
+            return {};
+        };
 
-    filePathResolver = [this] (const juce::String& path) -> juce::File
-    {
-        jassert (path.isNotEmpty());
+    if (options.filePathResolver)
+        filePathResolver = std::move (options.filePathResolver);
+    else
+        filePathResolver = [this] (const juce::String& path) -> juce::File
+        {
+            jassert (path.isNotEmpty());
 
-        if (juce::File::isAbsolutePath (path))
-            return path;
+            if (juce::File::isAbsolutePath (path))
+                return path;
 
-        if (editFileRetriever)
-            return editFileRetriever().getSiblingFile (path);
+            if (editFileRetriever)
+                return editFileRetriever().getSiblingFile (path);
 
-        return {};
-    };
+            return {};
+        };
 
     pluginCache                 = std::make_unique<PluginCache> (*this);
     mirroredPluginUpdateTimer   = std::make_unique<MirroredPluginUpdateTimer> (*this);
@@ -525,7 +533,7 @@ Edit::Edit (Engine& e, juce::ValueTree editState, EditRole role,
     trackCompManager            = std::make_unique<TrackCompManager> (*this);
     changedPluginsList          = std::make_unique<ChangedPluginsList>();
 
-    undoManager.setMaxNumberOfStoredUnits (1000 * numUndoLevelsToStore, numUndoLevelsToStore);
+    undoManager.setMaxNumberOfStoredUnits (1000 * options.numUndoLevelsToStore, options.numUndoLevelsToStore);
 
     initialise();
 
@@ -547,12 +555,24 @@ Edit::Edit (Engine& e, juce::ValueTree editState, EditRole role,
     isFullyConstructed.store (true, std::memory_order_relaxed);
 }
 
+Edit::Edit (Engine& e, juce::ValueTree editState, EditRole role,
+            LoadContext* sourceLoadContext, int numUndoLevelsToStore)
+    : Edit ({ e, editState, ProjectItemID::fromProperty (editState, IDs::projectID),
+              role, sourceLoadContext, numUndoLevelsToStore })
+{
+}
+
 Edit::~Edit()
 {
     CRASH_TRACER
 
     for (auto af : pluginCache->getPlugins())
         af->hideWindowForShutdown();
+
+    for (auto at : getTracksOfType<AudioTrack> (*this, true))
+        for (auto c : at->getClips())
+            if (auto acb = dynamic_cast<AudioClipBase*> (c))
+                acb->hideMelodyneWindow();
 
     engine.getActiveEdits().edits.removeFirstMatchingValue (this);
     masterReference.clear();
@@ -861,6 +881,7 @@ void Edit::initialiseTracks()
         updateTrackStatuses();
     }
 
+    ensureArrangerTrack();
     ensureTempoTrack();
     ensureMarkerTrack();
     ensureChordTrack();
@@ -1058,7 +1079,7 @@ void Edit::undoOrRedo (bool isUndo)
     for (auto sm : getSelectionManagers (*this))
     {
         sm->keepSelectedObjectsOnScreen();
-        sm->refreshDetailComponent();
+        sm->refreshPropertyPanel();
     }
 }
 
@@ -1077,13 +1098,17 @@ EditItemID Edit::createNewItemID (const std::vector<EditItemID>& idsToAvoid) con
     auto existingIDs = EditItemID::findAllIDs (state);
 
     existingIDs.insert (existingIDs.end(), idsToAvoid.begin(), idsToAvoid.end());
+    existingIDs.insert (existingIDs.end(), usedIDs.begin(), usedIDs.end());
 
     trackCache.visitItems ([&] (auto i)  { existingIDs.push_back (i->itemID); });
     clipCache.visitItems ([&] (auto i)   { existingIDs.push_back (i->itemID); });
 
     std::sort (existingIDs.begin(), existingIDs.end());
+    auto newID = EditItemID::findFirstIDNotIn (existingIDs);
+    jassert (usedIDs.find (newID) == usedIDs.end());
+    usedIDs.insert (newID);
 
-    return EditItemID::findFirstIDNotIn (existingIDs);
+    return newID;
 }
 
 EditItemID Edit::createNewItemID() const
@@ -1205,6 +1230,7 @@ Track::Ptr Edit::createTrack (const juce::ValueTree& v)
     if (v.hasType (IDs::AUTOMATIONTRACK))  return createAndInitialiseTrack<AutomationTrack> (*this, v);
     if (v.hasType (IDs::TEMPOTRACK))       return createAndInitialiseTrack<TempoTrack> (*this, v);
     if (v.hasType (IDs::CHORDTRACK))       return createAndInitialiseTrack<ChordTrack> (*this, v);
+    if (v.hasType (IDs::ARRANGERTRACK))    return createAndInitialiseTrack<ArrangerTrack> (*this, v);
 
     jassertfalse;
     return {};
@@ -1450,10 +1476,9 @@ void Edit::toggleTimecodeMode()
 
     setTimecodeFormat (f);
 
-    for (SelectionManager::Iterator sm; sm.next();)
-        if (sm->edit == this)
-            if (! sm->containsType<ExternalPlugin>())
-                sm->refreshDetailComponent();
+    for (auto sm : getSelectionManagers (*this))
+        if (! sm->containsType<ExternalPlugin>())
+            sm->refreshPropertyPanel();
 }
 
 //==============================================================================
@@ -1585,23 +1610,6 @@ juce::Array<Clip*> Edit::findClipsInLinkGroup (EditItemID linkGroupID) const
     return {};
 }
 
-AudioTrack::Ptr Edit::getOrInsertAudioTrackAt (int trackIndex)
-{
-    int i = 0;
-
-    // find the next audio track on or after the given index..
-    for (auto t : getAllTracks (*this))
-    {
-        if (i >= trackIndex)
-            if (auto at = dynamic_cast<AudioTrack*> (t))
-                return at;
-
-        ++i;
-    }
-
-    return insertNewAudioTrack (TrackInsertPoint (nullptr, getAllTracks (*this).getLast()), nullptr);
-}
-
 Track::Ptr Edit::insertTrack (TrackInsertPoint insertPoint, juce::ValueTree v, SelectionManager* sm)
 {
     CRASH_TRACER
@@ -1718,9 +1726,8 @@ void Edit::moveTrack (Track::Ptr t, TrackInsertPoint destination)
         newParent.moveChild (currentIndex, newIndex, &undoManager);
     }
 
-    for (SelectionManager::Iterator sm; sm.next();)
-        if (sm->edit == this)
-            sm->keepSelectedObjectsOnScreen();
+    for (auto sm : getSelectionManagers (*this))
+        sm->keepSelectedObjectsOnScreen();
 }
 
 void Edit::updateTrackStatuses()
@@ -1732,7 +1739,7 @@ void Edit::updateTrackStatuses()
 
     // Only refresh if this Edit is being shown or it can cancel things like file previews
     for (auto sm : getSelectionManagers (*this))
-        sm->refreshDetailComponent();
+        sm->refreshPropertyPanel();
 }
 
 void Edit::updateTrackStatusesAsync()
@@ -1831,6 +1838,16 @@ void Edit::sanityCheckTrackNames()
         t.sanityCheckName();
         return true;
     });
+}
+
+void Edit::ensureArrangerTrack()
+{
+    if (getArrangerTrack() == nullptr)
+    {
+        juce::ValueTree v (IDs::ARRANGERTRACK);
+        v.setProperty (IDs::name, TRANS("Arranger"), nullptr);
+        state.addChild (v, 0, &getUndoManager());
+    }
 }
 
 void Edit::ensureTempoTrack()
@@ -2420,6 +2437,11 @@ juce::Array<AutomatableParameter*> Edit::getAllAutomatableParams (bool includeTr
 }
 
 //==============================================================================
+ArrangerTrack* Edit::getArrangerTrack() const
+{
+    return dynamic_cast<ArrangerTrack*> (findTrackForPredicate (*this, [] (Track& t) { return t.isArrangerTrack(); }));
+}
+
 MarkerTrack* Edit::getMarkerTrack() const
 {
     return dynamic_cast<MarkerTrack*> (findTrackForPredicate (*this, [] (Track& t) { return t.isMarkerTrack(); }));

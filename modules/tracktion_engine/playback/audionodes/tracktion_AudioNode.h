@@ -77,8 +77,8 @@ struct AudioRenderContext
 
     AudioRenderContext (const AudioRenderContext&) = default;
     AudioRenderContext (AudioRenderContext&&) = default;
-    AudioRenderContext& operator= (const AudioRenderContext&) = default;
-    AudioRenderContext& operator= (AudioRenderContext&&) = default;
+    AudioRenderContext& operator= (const AudioRenderContext&) = delete;
+    AudioRenderContext& operator= (AudioRenderContext&&) = delete;
 
     //==============================================================================
     /** The playhead provides information about current time, tempo etc at the block
@@ -154,13 +154,6 @@ struct AudioRenderContext
     void sanityCheck() const
     {
         jassert (destBuffer == nullptr || bufferStartSample + bufferNumSamples <= destBuffer->getNumSamples());
-    }
-
-    /** Ensures that the buffer has at least the requested number of channels */
-    void setMaxNumChannels (int num) const
-    {
-        jassert (destBuffer != nullptr);
-        destBuffer->setSize (juce::jmin (destBuffer->getNumChannels(), num), destBuffer->getNumSamples(), true);
     }
 };
 
@@ -294,7 +287,7 @@ private:
 //==============================================================================
 struct MuteAudioNode  : public SingleInputAudioNode
 {
-    MuteAudioNode (AudioNode* input) : SingleInputAudioNode (input) {}
+    MuteAudioNode (AudioNode* source) : SingleInputAudioNode (source) {}
 
     void renderOver (const AudioRenderContext& rc) override
     {

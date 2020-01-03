@@ -15,7 +15,7 @@ struct PluginCreationInfo
 {
     PluginCreationInfo (const PluginCreationInfo&) = default;
     PluginCreationInfo (PluginCreationInfo&&) = default;
-    PluginCreationInfo& operator= (PluginCreationInfo&&) = default;
+    PluginCreationInfo& operator= (PluginCreationInfo&&) = delete;
 
     PluginCreationInfo (Edit& ed, const juce::ValueTree& s, bool isNew) noexcept
         : edit (ed), state (s), isNewPlugin (isNew) {}
@@ -148,7 +148,6 @@ public:
     virtual bool takesAudioInput()                      { return ! isSynth(); }
     virtual bool takesMidiInput()                       { return false; }
     virtual bool isSynth()                              { return false; }
-    virtual int getLatencySamples()                     { return 0; }
     virtual double getLatencySeconds()                  { return 0.0; }
     virtual double getTailLength() const                { return 0.0; }
     virtual bool mustBePlayedLiveWhenOnAClip() const    { return false; }
@@ -207,6 +206,8 @@ public:
     juce::ReferenceCountedObjectPtr<RackType> getOwnerRackType() const;
 
     bool isClipEffectPlugin() const;
+
+    virtual juce::AudioProcessor* getWrappedAudioProcessor() const      { return {}; }
 
     //==============================================================================
     AutomatableParameter::Ptr getQuickControlParameter() const;
@@ -308,7 +309,7 @@ protected:
     void valueTreeChildAdded (juce::ValueTree&, juce::ValueTree&) override;
     void valueTreeChildRemoved (juce::ValueTree&, juce::ValueTree&, int) override;
     void valueTreeParentChanged (juce::ValueTree&) override;
-    
+
     virtual void processingChanged();
 
     //==============================================================================

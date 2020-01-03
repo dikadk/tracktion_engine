@@ -57,7 +57,7 @@ struct LiveMidiInjectingAudioNode  : public SingleInputAudioNode
 
     void renderOver (const AudioRenderContext& rc) override
     {
-        if (rc.bufferForMidiMessages != nullptr && ! liveMidiMessages.isEmpty())
+        if (rc.bufferForMidiMessages != nullptr && anyLiveMidiMessages())
             callRenderAdding (rc);
         else
             input->renderOver (rc);
@@ -65,7 +65,7 @@ struct LiveMidiInjectingAudioNode  : public SingleInputAudioNode
 
     void renderAdding (const AudioRenderContext& rc) override
     {
-        if (rc.bufferForMidiMessages != nullptr && ! liveMidiMessages.isEmpty())
+        if (rc.bufferForMidiMessages != nullptr && anyLiveMidiMessages())
         {
             MidiMessageArray messages;
 
@@ -112,6 +112,12 @@ private:
     static juce::Array<LiveMidiInjectingAudioNode*> activeNodes;
     static CriticalSection activeNodeLock;
     MidiMessageArray::MPESourceID midiSourceID = MidiMessageArray::createUniqueMPESourceID();
+
+    bool anyLiveMidiMessages() const
+    {
+        const ScopedLock sl (liveMidiLock);
+        return ! liveMidiMessages.isEmpty();
+    };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LiveMidiInjectingAudioNode)
 };
@@ -255,8 +261,8 @@ private:
 };
 
 //==============================================================================
-AudioTrack::AudioTrack (Edit& edit, const ValueTree& v)
-    : ClipTrack (edit, v, 50, 13, 2000)
+AudioTrack::AudioTrack (Edit& ed, const ValueTree& v)
+    : ClipTrack (ed, v, 50, 13, 2000)
 {
     soloed.referTo (state, IDs::solo, nullptr);
     soloIsolated.referTo (state, IDs::soloIsolate, nullptr);
@@ -272,7 +278,7 @@ AudioTrack::AudioTrack (Edit& edit, const ValueTree& v)
     std::vector<ChannelIndex> channels = { ChannelIndex (0, juce::AudioChannelSet::left),
                                            ChannelIndex (1, juce::AudioChannelSet::right) };
 
-    callBlocking ([this, &edit, &channels]
+    callBlocking ([this, &channels]
     {
         waveInputDevice = std::make_unique<WaveInputDevice> (edit.engine, itemID.toString(),
                                                              TRANS("Track Wave Input"), channels,
@@ -838,7 +844,7 @@ static juce::Array<AudioNode*> createLiveInputs (AudioTrack& track, const Create
     if (! params.forRendering)
         if (auto context = track.edit.getCurrentPlaybackContext())
             for (auto in : context->getAllInputs())
-                if (in->isLivePlayEnabled() && in->getTargetTrack() == &track)
+                if (in->isLivePlayEnabled (track) && in->isOnTargetTrack (track))
                     if (auto node = in->createLiveInputNode())
                         destArray.add (node);
 
@@ -1083,7 +1089,7 @@ AudioNode* AudioTrack::createAudioNode (const CreateAudioNodeParams& params)
 bool AudioTrack::hasAnyLiveInputs()
 {
     for (auto in : edit.getAllInputDevices())
-        if (in->isRecordingActive() && this == in->getTargetTrack())
+        if (in->isRecordingActive (*this) && in->isOnTargetTrack (*this))
             return true;
 
     return false;

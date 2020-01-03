@@ -11,14 +11,14 @@
 namespace tracktion_engine
 {
 
-Track::Track (Edit& edit, const ValueTree& v, double defaultHeight, double minHeight, double maxHeight)
-    : EditItem (EditItemID::readOrCreateNewID (edit, v), edit),
-      MacroParameterElement (edit, v), // TODO: @Dave - this dumps an XML element in every track, including tempo, marker, etc - is that needed?
+Track::Track (Edit& ed, const ValueTree& v, double defaultHeight, double minHeight, double maxHeight)
+    : EditItem (EditItemID::readOrCreateNewID (ed, v), ed),
+      MacroParameterElement (ed, v), // TODO: @Dave - this dumps an XML element in every track, including tempo, marker, etc - is that needed?
       defaultTrackHeight (defaultHeight),
       minTrackHeight (minHeight),
       maxTrackHeight (maxHeight),
       state (v),
-      pluginList (edit)
+      pluginList (ed)
 {
     edit.trackCache.addItem (*this);
     auto um = &edit.getUndoManager();
@@ -444,15 +444,22 @@ void Track::insertSpaceIntoTrack (double time, double amountOfSpace)
     {
         for (int j = p->getNumAutomatableParameters(); --j >= 0;)
         {
-            if (auto param = p->getAutomatableParameter(j))
+            if (auto param = p->getAutomatableParameter (j))
             {
                 auto& curve = param->getCurve();
+                auto valueAtInsertionTime = curve.getValueAt (time);
 
                 for (int k = curve.getNumPoints(); --k >= 0;)
                     if (curve.getPointTime (k) >= time)
                         curve.movePoint (k,
                                          curve.getPointTime (k) + amountOfSpace,
                                          curve.getPointValue (k), false);
+
+                if (! approximatelyEqual (valueAtInsertionTime, curve.getValueAt (time)))
+                    curve.addPoint (time, valueAtInsertionTime, 0.0f);
+
+                if (! approximatelyEqual (valueAtInsertionTime, curve.getValueAt (time + amountOfSpace)))
+                    curve.addPoint (time + amountOfSpace, valueAtInsertionTime, 0.0f);
             }
         }
     }

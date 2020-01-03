@@ -15,10 +15,10 @@ class EqualiserPlugin::EQAutomatableParameter : public AutomatableParameter
 {
 public:
     EQAutomatableParameter (EqualiserPlugin& p, const String& xmlTag, const String& name,
-                            Plugin& owner, Range<float> valueRange, int paramNumber_,
+                            Plugin& owner, Range<float> valueRangeToUse, int paramNumberToUse,
                             bool isGain_, bool isFreq_, bool isQ_)
-        : AutomatableParameter (xmlTag, name, owner, valueRange),
-          equaliser (p), paramNumber (paramNumber_),
+        : AutomatableParameter (xmlTag, name, owner, valueRangeToUse),
+          equaliser (p), paramNumber (paramNumberToUse),
           isGain (isGain_), isFreq (isFreq_), isQ (isQ_)
     {
     }
@@ -276,10 +276,11 @@ void EqualiserPlugin::applyToBuffer (const AudioRenderContext& fc)
 
         jassert (fc.bufferStartSample + fc.bufferNumSamples <= fc.destBuffer->getNumSamples());
 
-        fc.setMaxNumChannels ((int) EQ_CHANS);
+        clearChannels (*fc.destBuffer, EQ_CHANS, -1, fc.bufferStartSample, fc.bufferNumSamples);
+
         addAntiDenormalisationNoise (*fc.destBuffer, fc.bufferStartSample, fc.bufferNumSamples);
 
-        for (int i = fc.destBuffer->getNumChannels(); --i >= 0;)
+        for (int i = jmin ((int) EQ_CHANS, fc.destBuffer->getNumChannels()); --i >= 0;)
         {
             float* const data = fc.destBuffer->getWritePointer (i, fc.bufferStartSample);
 

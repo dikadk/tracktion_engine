@@ -23,6 +23,7 @@
  #pragma clang diagnostic ignored "-Wconversion"
  #pragma clang diagnostic ignored "-Woverloaded-virtual"
  #pragma clang diagnostic ignored "-Wshadow"
+ #pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
  #if __clang_major__ >= 10
   #pragma clang diagnostic ignored "-Wpragma-pack"
  #endif
@@ -38,14 +39,9 @@
 
 // If you get an error here, in order to build with ARA support you'll need
 // to include the SDK in your header search paths!
-#if JUCE_MAC
- #include "ARASDK/ARAAudioUnit.h"
-#endif
+#include "ARA_API/ARAVST3.h"
+#include "ARA_Library/Dispatch/ARAHostDispatch.h"
 
-#include "ARASDK/ARAVST2.h"
-#include "ARASDK/ARAVST3.h"
-
-#include "pluginterfaces/vst2.x/aeffectx.h"
 #include "pluginterfaces/vst/ivstcomponent.h"
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
 
@@ -53,6 +49,7 @@ namespace ARA
 {
     DEF_CLASS_IID (IMainFactory)
     DEF_CLASS_IID (IPlugInEntryPoint)
+    DEF_CLASS_IID (IPlugInEntryPoint2)
 }
 
 #if JUCE_MSVC
@@ -80,6 +77,7 @@ struct ARAClipPlayer  : private SelectableListener
         edit (ed)
     {
         TRACKTION_ASSERT_MESSAGE_THREAD
+        jassert (file.getFile().existsAsFile());
         edit.tempoSequence.addSelectableListener (this);
     }
 
@@ -121,6 +119,7 @@ struct ARAClipPlayer  : private SelectableListener
     Edit& getEdit()                         { return edit; }
     AudioClipBase& getClip()                { return clip; }
     ExternalPlugin* getPlugin()             { return melodyneInstance != nullptr ? melodyneInstance->plugin.get() : nullptr; }
+    const ARAFactory* getARAFactory() const { return melodyneInstance != nullptr ? melodyneInstance->factory : nullptr; }
 
     //==============================================================================
     bool initialise (ARAClipPlayer* clipToClone)
@@ -241,24 +240,35 @@ struct ARAClipPlayer  : private SelectableListener
     }
 
     //==============================================================================
+    void setViewSelection()
+    {
+        if (playbackRegionAndSource != nullptr)
+            playbackRegionAndSource->setViewSelection();
+    }
+
+    //==============================================================================
     void startProcessing()  { TRACKTION_ASSERT_MESSAGE_THREAD if (playbackRegionAndSource != nullptr) playbackRegionAndSource->enable(); }
     void stopProcessing()   { TRACKTION_ASSERT_MESSAGE_THREAD if (playbackRegionAndSource != nullptr) playbackRegionAndSource->disable(); }
 
-    class ContentAnalyser  : public Timer
+    class ContentAnalyser
     {
     public:
         ContentAnalyser (const ARAClipPlayer& p)  : pimpl (p)
         {
-            startTimer (100);
         }
 
-        bool isAnalysing() const noexcept       { return analysingContent; }
+        bool isAnalysing()
+        {
+            callBlocking ([this] { updateAnalysingContent(); });
 
-        void timerCallback() override
+            return analysingContent;
+        }
+
+        void updateAnalysingContent()
         {
             CRASH_TRACER
 
-            ARADocument* doc = pimpl.getDocument();
+            auto doc = pimpl.getDocument();
 
             if (doc == nullptr)
             {
@@ -278,14 +288,32 @@ struct ARAClipPlayer  : private SelectableListener
             {
                 if (firstCall)
                 {
-                    firstCall = false;
+                    auto araFactory = pimpl.getARAFactory();
+                    for (ARAContentType contentType : { kARAContentTypeBarSignatures, kARAContentTypeTempoEntries })
+                    {
+                        for (int i = 0; i < (int) araFactory->analyzeableContentTypesCount; i++)
+                        {
+                            if (araFactory->analyzeableContentTypes[i] == contentType)
+                            {
+                                typesBeingAnalyzed.push_back (contentType);
+                                break;
+                            }
+                        }
+                    }
 
-                    ARAContentType types[] = { kARAContentTypeSignatures, kARAContentTypeTempoEntries };
-                    dci->requestAudioSourceContentAnalysis (dcRef, audioSourceRef, (ARASize) numElementsInArray (types), types);
+                    if (!typesBeingAnalyzed.empty())
+                        dci->requestAudioSourceContentAnalysis (dcRef, audioSourceRef, (ARASize)typesBeingAnalyzed.size(), typesBeingAnalyzed.data());
+                    
+                    firstCall = false;
                 }
 
-                analysingContent = dci->isAudioSourceContentAnalysisIncomplete (dcRef, audioSourceRef, kARAContentTypeSignatures) != kARAFalse
-                                || dci->isAudioSourceContentAnalysisIncomplete (dcRef, audioSourceRef, kARAContentTypeTempoEntries) != kARAFalse;
+                analysingContent = false;
+                for (ARAContentType contentType : typesBeingAnalyzed)
+                {
+                    analysingContent = (dci->isAudioSourceContentAnalysisIncomplete (dcRef, audioSourceRef, contentType) != kARAFalse);
+                    if (analysingContent)
+                        break;
+                }
             }
             else
             {
@@ -295,8 +323,9 @@ struct ARAClipPlayer  : private SelectableListener
 
     private:
         const ARAClipPlayer& pimpl;
+        std::vector<ARAContentType> typesBeingAnalyzed;
         volatile bool analysingContent = false;
-        bool firstCall = false;
+        bool firstCall = true;
 
         ContentAnalyser() = delete;
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ContentAnalyser)
@@ -308,7 +337,6 @@ struct ARAClipPlayer  : private SelectableListener
 
     bool isAnalysingContent() const
     {
-        jassert (contentAnalyserChecker->isTimerRunning());
         return contentAnalyserChecker->isAnalysing();
     }
 
@@ -514,8 +542,17 @@ MelodyneFileReader::~MelodyneFileReader()
 //==============================================================================
 void MelodyneFileReader::showPluginWindow()
 {
+    if (player != nullptr)
+        player->setViewSelection();
+
     if (auto p = getPlugin())
         p->showWindowExplicitly();
+}
+
+void MelodyneFileReader::hidePluginWindow()
+{
+    if (auto p = getPlugin())
+        p->hideWindowForShutdown();
 }
 
 ExternalPlugin* MelodyneFileReader::getPlugin()
@@ -608,7 +645,10 @@ public:
 
     void visitNodes (const VisitorFn& v) override               { v (*this); }
     bool purgeSubNodes (bool keepAudio, bool) override          { return keepAudio; }
-    bool isReadyToRender() override                             { return ! melodyneProxy->isAnalysingContent(); }
+    bool isReadyToRender() override
+    {
+        return ! melodyneProxy->isAnalysingContent();
+    }
     void renderAdding (const AudioRenderContext& rc) override   { callRenderOver (rc); }
     void renderOver (const AudioRenderContext& rc) override     { invokeSplitRender (rc, *this); }
 
@@ -892,6 +932,7 @@ MelodyneFileReader::~MelodyneFileReader() {}
 void MelodyneFileReader::cleanUpOnShutdown()                        {}
 ExternalPlugin* MelodyneFileReader::getPlugin()                     { return {}; }
 void MelodyneFileReader::showPluginWindow()                         {}
+void MelodyneFileReader::hidePluginWindow()                         {}
 bool MelodyneFileReader::isAnalysingContent()                       { return false; }
 MidiMessageSequence MelodyneFileReader::getAnalysedMIDISequence()   { return {}; }
 AudioNode* MelodyneFileReader::createAudioNode (LiveClipLevel)      { return {}; }

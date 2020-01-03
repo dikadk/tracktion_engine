@@ -62,7 +62,8 @@ void Engine::initialise()
     backgroundJobManager.reset (new BackgroundJobManager());
     pluginManager.reset (new PluginManager (*this));
 
-    deviceManager->initialise();
+    if (engineBehaviour->autoInitialiseDeviceManager())
+        deviceManager->initialise();
 
     pluginManager->initialise();
 
@@ -86,8 +87,8 @@ Engine::~Engine()
     deviceManager.reset();
     midiProgramManager.reset();
 
-    pluginManager.reset();
     MelodyneFileReader::cleanUpOnShutdown();
+    pluginManager.reset();
 
     temporaryFileManager.reset();
     ProjectManager::deleteInstance();

@@ -328,7 +328,7 @@ String PhysicalMidiInputDevice::openDevice()
     if (inputDevice == nullptr)
     {
         CRASH_TRACER
-        inputDevice.reset (MidiInput::openDevice (deviceIndex, this));
+        inputDevice = MidiInput::openDevice (deviceIndex, this);
 
         if (inputDevice != nullptr)
         {
@@ -484,8 +484,8 @@ void PhysicalMidiInputDevice::setReadingControllerMessages (bool b)
 class MidiInputDevice::MidiEventSnifferNode  : public SingleInputAudioNode
 {
 public:
-    MidiEventSnifferNode (AudioNode* input, MidiInputDevice& d)
-        : SingleInputAudioNode (input), owner (d)
+    MidiEventSnifferNode (AudioNode* source, MidiInputDevice& d)
+        : SingleInputAudioNode (source), owner (d)
     {
     }
 

@@ -35,13 +35,11 @@ void ChorusPlugin::initialise (const PlaybackInitialisationInfo& info)
     int bufferSizeSamples = roundToInt ((maxLengthMs * info.sampleRate) / 1000.0);
     delayBuffer.ensureMaxBufferSize (bufferSizeSamples);
     delayBuffer.clearBuffer();
-    latencySamples = bufferSizeSamples;
     phase = 0.0f;
 }
 
 void ChorusPlugin::deinitialise()
 {
-    latencySamples = 0;
     delayBuffer.releaseBuffer();
 }
 
@@ -51,8 +49,6 @@ void ChorusPlugin::applyToBuffer (const AudioRenderContext& fc)
         return;
 
     SCOPED_REALTIME_CHECK
-
-    fc.setMaxNumChannels (2);
 
     float ph = 0.0f;
     int bufPos = 0;
@@ -72,7 +68,9 @@ void ChorusPlugin::applyToBuffer (const AudioRenderContext& fc)
 
     AudioFadeCurve::CrossfadeLevels wetDry (mixProportion);
 
-    for (int chan = fc.destBuffer->getNumChannels(); --chan >= 0;)
+    clearChannels (*fc.destBuffer, 2, -1, fc.bufferStartSample, fc.bufferNumSamples);
+
+    for (int chan = jmin (2, fc.destBuffer->getNumChannels()); --chan >= 0;)
     {
         float* const d = fc.destBuffer->getWritePointer (chan, fc.bufferStartSample);
         float* const buf = (float*) delayBuffer.buffers[chan].getData();
@@ -113,6 +111,9 @@ void ChorusPlugin::applyToBuffer (const AudioRenderContext& fc)
     zeroDenormalisedValuesIfNeeded (*fc.destBuffer);
 
     phase = ph;
+    if (phase >= MathConstants<float>::pi * 2)
+        phase -= MathConstants<float>::pi * 2;
+
     delayBuffer.bufferPos = bufPos;
 }
 

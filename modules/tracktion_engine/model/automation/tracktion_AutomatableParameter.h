@@ -40,6 +40,8 @@ public:
     AutomationCurve& getCurve() const noexcept;
 
     void attachToCurrentValue (juce::CachedValue<float>&);
+    void attachToCurrentValue (juce::CachedValue<int>&);
+    void attachToCurrentValue (juce::CachedValue<bool>&);
     void detachFromCurrentValue();
 
     //==============================================================================
@@ -63,9 +65,11 @@ public:
     float getCurrentValue() const noexcept                      { return currentValue; }
     float getCurrentNormalisedValue() const noexcept            { return valueRange.convertTo0to1 (currentValue); }
 
-    virtual juce::String getCurrentValueAsString()              { return valueToString (getCurrentValue()); }
     virtual juce::String valueToString (float value)            { return valueToStringFunction (value); }
     virtual float stringToValue (const juce::String& s)         { return stringToValueFunction (s); }
+
+    virtual juce::String getCurrentValueAsString()              { return valueToString (getCurrentValue()); }
+    juce::String getCurrentValueAsStringWithLabel();
 
     std::function<juce::String(float)> valueToStringFunction;
     std::function<float(const juce::String&)> stringToValueFunction;
@@ -219,6 +223,9 @@ public:
 
 protected:
     struct AttachedValue;
+    struct AttachedFloatValue;
+    struct AttachedIntValue;
+    struct AttachedBoolValue;
     std::unique_ptr<AttachedValue> attachedValue;
     juce::ListenerList<Listener> listeners;
 
@@ -227,7 +234,7 @@ protected:
     Modifier* modifierOwner = nullptr;
     MacroParameterList* macroOwner = nullptr;
     std::unique_ptr<AutomationCurveSource> curveSource;
-    float currentValue = 0.0f, currentParameterValue = 0.0f, currentBaseValue = 0.0f, currentModifierValue = 0.0f;
+    std::atomic<float> currentValue { 0.0f }, currentParameterValue { 0.0f },  currentBaseValue { 0.0f }, currentModifierValue { 0.0f };
     bool isRecording = false, updateParametersRecursionCheck = false;
 
     juce::ValueTree modifiersState;

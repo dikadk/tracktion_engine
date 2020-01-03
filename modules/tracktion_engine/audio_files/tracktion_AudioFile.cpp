@@ -317,6 +317,7 @@ AudioFileInfo::AudioFileInfo (const AudioFile& file, juce::AudioFormatReader* re
 {
     if (reader != nullptr)
     {
+        wasParsedOk     = true;
         sampleRate      = reader->sampleRate;
         lengthInSamples = reader->lengthInSamples;
         numChannels     = (int) reader->numChannels;
@@ -329,6 +330,7 @@ AudioFileInfo::AudioFileInfo (const AudioFile& file, juce::AudioFormatReader* re
     }
     else
     {
+        wasParsedOk = false;
         format = nullptr;
         sampleRate = 0;
         lengthInSamples = 0;
@@ -471,7 +473,11 @@ void SmartThumbnail::releaseFile()
 {
     clear();
     thumbnailIsInvalid = true;
-    startTimer (400);
+    juce::MessageManager::callAsync ([ref = juce::WeakReference<SmartThumbnail> (this), this]() mutable
+                                     {
+                                         if (ref != nullptr)
+                                             startTimer (400);
+                                     });
 }
 
 void SmartThumbnail::createThumbnailReader()
@@ -592,7 +598,7 @@ void AudioFileManager::removeFile (juce::int64 hash)
 {
     const juce::ScopedLock sl (knownFilesLock);
 
-    if (auto* f = knownFiles[hash])
+    if (auto f = knownFiles[hash])
     {
         delete f;
         knownFiles.remove (hash);
@@ -612,7 +618,8 @@ AudioFileInfo AudioFileManager::getInfo (const AudioFile& file)
 
 bool AudioFileManager::checkFileTime (KnownFile& f)
 {
-    if (f.info.fileModificationTime != f.file.getFile().getLastModificationTime())
+    if (! f.info.wasParsedOk
+        || f.info.fileModificationTime != f.file.getFile().getLastModificationTime())
     {
         f.info = AudioFileInfo::parse (f.file);
         return true;
@@ -668,6 +675,8 @@ void AudioFileManager::releaseAllFiles()
 {
     cache.releaseAllFiles();
 
+    const juce::ScopedLock sl (activeThumbnailLock);
+
     for (auto t : activeThumbnails)
         t->releaseFile();
 }
@@ -675,6 +684,8 @@ void AudioFileManager::releaseAllFiles()
 void AudioFileManager::releaseFile (const AudioFile& file)
 {
     cache.releaseFile (file);
+
+    const juce::ScopedLock sl (activeThumbnailLock);
 
     for (auto t : activeThumbnails)
         if (t->file == file)
@@ -687,6 +698,8 @@ void AudioFileManager::callListeners (const AudioFile& file)
     TRACKTION_ASSERT_MESSAGE_THREAD
 
     thumbnailCache->removeThumb (file.getHash());
+
+    const juce::ScopedLock sl (activeThumbnailLock);
 
     for (auto t : activeThumbnails)
         if (t->file == file)
@@ -701,7 +714,7 @@ void AudioFileManager::forceFileUpdate (const AudioFile& file)
     // this doesn't check for file time and is used when files are changed rapidly such as when recording
     const juce::ScopedLock sl (knownFilesLock);
 
-    if (auto* f = knownFiles[file.getHash()])
+    if (auto f = knownFiles[file.getHash()])
     {
         f->info = AudioFileInfo::parse (f->file);
         releaseFile (file);

@@ -289,9 +289,9 @@ void SamplerPlugin::applyToBuffer (const AudioRenderContext& fc)
     {
         SCOPED_REALTIME_CHECK
 
-        fc.setMaxNumChannels (2);
-
         const ScopedLock sl (lock);
+
+        clearChannels (*fc.destBuffer, 2, -1, fc.bufferStartSample, fc.bufferNumSamples);
 
         if (fc.bufferForMidiMessages != nullptr)
         {
@@ -367,7 +367,7 @@ void SamplerPlugin::applyToBuffer (const AudioRenderContext& fc)
 
         for (int i = playingNotes.size(); --i >= 0;)
         {
-            auto sn = playingNotes.getUnchecked(i);
+            auto sn = playingNotes.getUnchecked (i);
 
             sn->addNextBlock (*fc.destBuffer, fc.bufferStartSample, fc.bufferNumSamples);
 

@@ -43,6 +43,7 @@ struct OldEditConversion
         convertMidiVersion (editXML);
         convertMpeVersion (editXML);
         convertPluginsAndClips (editXML);
+        fixTrackTags (editXML);
         convertFolderTracks (editXML);
         convertLegacyLFOs (editXML);
         convertLegacyIDsIfNeeded (editXML);
@@ -486,6 +487,28 @@ private:
         }
     }
 
+    static void fixTrackTags (juce::XmlElement& xml)
+    {
+        juce::Array<juce::XmlElement*> tracks;
+        addTracks (tracks, xml);
+
+        for (auto e : tracks)
+        {
+            if (! e->hasAttribute (IDs::tags))
+                continue;
+
+            auto tagsString = e->getStringAttribute (IDs::tags);
+            auto tags = juce::StringArray::fromTokens (tagsString, "|", "\"");
+
+            for (auto& tag : tags)
+                tag = tag.trimCharactersAtStart ("_").trimCharactersAtEnd ("_");
+
+            tags.trim();
+            tags.removeEmptyStrings();
+            e->setAttribute (IDs::tags, tags.joinIntoString ("|"));
+        }
+    }
+
     static void convertFolderTracks (juce::XmlElement& xml)
     {
         juce::Array<juce::XmlElement*> tracks;
@@ -515,20 +538,23 @@ private:
         }
     }
 
-    static void addPlugins (juce::Array<juce::XmlElement*>& plugins, juce::XmlElement& xml)
+    static void addNodeRecursively (juce::Array<juce::XmlElement*>& plugins, juce::XmlElement& xml, const Identifier& tagName)
     {
-        if (xml.hasTagName (IDs::PLUGIN))
+        if (xml.hasTagName (tagName))
             plugins.add (&xml);
 
         forEachXmlChildElement (xml, e)
-            addPlugins (plugins, *e);
+            addNodeRecursively (plugins, *e, tagName);
     }
 
     static void convertLegacyLFOs (juce::XmlElement& xml)
     {
         juce::Array<juce::XmlElement*> tracks, plugins, lfosToDelete, automationSourcesToDelete;
         addTracks (tracks, xml);
-        addPlugins (plugins, xml);
+        addNodeRecursively (plugins, xml, IDs::PLUGIN);
+
+        // This will be done before the FILTER -> PLUGIN conversion so we need to account for both
+        addNodeRecursively (plugins, xml, "FILTER");
 
         // - Convert LFOS to MODIFIERS
         // Find LFOS node, rename to MODIFIERS

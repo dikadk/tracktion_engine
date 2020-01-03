@@ -79,6 +79,23 @@ bool Clipboard::ContentType::pasteIntoEdit (const EditPastingOptions&) const    
 Clipboard::ProjectItems::ProjectItems() {}
 Clipboard::ProjectItems::~ProjectItems() {}
 
+static AudioTrack* getOrInsertAudioTrackNearestIndex (Edit& edit, int trackIndex)
+{
+    int i = 0;
+
+    // find the next audio track on or after the given index..
+    for (auto t : getAllTracks (edit))
+    {
+        if (i >= trackIndex)
+            if (auto at = dynamic_cast<AudioTrack*> (t))
+                return at;
+
+        ++i;
+    }
+
+    return edit.insertNewAudioTrack (TrackInsertPoint (nullptr, getAllTracks (edit).getLast()), nullptr).get();
+};
+
 static double pasteMIDIFileIntoEdit (Edit& edit, const File& midiFile, int& targetTrackIndex,
                                      double startTime, bool importTempoChanges)
 {
@@ -158,7 +175,7 @@ static double pasteMIDIFileIntoEdit (Edit& edit, const File& midiFile, int& targ
             if (list->state.isValid())
                 clipState.addChild (list->state, -1, nullptr);
 
-            if (auto at = edit.getOrInsertAudioTrackAt (targetTrackIndex))
+            if (auto at = getOrInsertAudioTrackNearestIndex (edit, targetTrackIndex))
             {
                 auto time = tempoSequence.beatsToTime ({ startBeat, endBeat });
 
@@ -186,7 +203,7 @@ struct ProjectItemPastingOptions
 {
     bool shouldImportTempoChangesFromMIDI = false;
     bool separateTracks = false;
-    bool snapBWavsToOriginalTime = true;
+    bool snapBWavsToOriginalTime = false;
 };
 
 static void askUserAboutProjectItemPastingOptions (const Clipboard::ProjectItems& items, UIBehaviour& ui,
@@ -234,7 +251,7 @@ static void askUserAboutProjectItemPastingOptions (const Clipboard::ProjectItems
         {
            #if JUCE_MODAL_LOOPS_PERMITTED
             ToggleButton toggle (TRANS("Snap to BWAV"));
-            toggle.setSize(200,20);
+            toggle.setSize (200, 20);
 
             std::unique_ptr<AlertWindow> aw (LookAndFeel::getDefaultLookAndFeel().createAlertWindow (TRANS("Add multiple files"),
                                                                                                      TRANS("Do you want to add multiple files to one track or to separate tracks?"),
@@ -289,6 +306,8 @@ bool Clipboard::ProjectItems::pasteIntoEdit (const EditPastingOptions& options) 
 
     ProjectItemPastingOptions pastingOptions;
 
+    pastingOptions.separateTracks = options.preferredLayout == FileDragList::vertical;
+
     if (! options.silent)
         askUserAboutProjectItemPastingOptions (*this, ui, pastingOptions);
 
@@ -323,7 +342,7 @@ bool Clipboard::ProjectItems::pasteIntoEdit (const EditPastingOptions& options) 
 
             if (file.exists())
             {
-                if (auto targetTrack = options.edit.getOrInsertAudioTrackAt (targetTrackIndex))
+                if (auto targetTrack = getOrInsertAudioTrackNearestIndex (options.edit, targetTrackIndex))
                 {
                     if (sourceItem->isMidi())
                     {
@@ -332,16 +351,25 @@ bool Clipboard::ProjectItems::pasteIntoEdit (const EditPastingOptions& options) 
                     }
                     else if (sourceItem->isWave())
                     {
+                        sourceItem->verifyLength();
+                        jassert (sourceItem->getLength() > 0);
+
                         if (auto newClip = targetTrack->insertWaveClip (sourceItem->getName(), sourceItem->getID(),
                                                                         { { startTime, startTime + sourceItem->getLength() }, 0.0 }, false))
                         {
                             newClipEndTime = newClip->getPosition().getEnd();
                             itemsAdded.add (newClip.get());
+
+                            if (pastingOptions.snapBWavsToOriginalTime)
+                                newClip->snapToOriginalBWavTime();
                         }
 
                     }
                     else if (sourceItem->isEdit())
                     {
+                        sourceItem->verifyLength();
+                        jassert (sourceItem->getLength() > 0);
+
                         if (auto newClip = targetTrack->insertEditClip ({ startTime, startTime + sourceItem->getLength() },
                                                                         sourceItem->getID()))
                         {
@@ -420,13 +448,13 @@ void Clipboard::Clips::addSelectedClips (const SelectableList& selectedObjects, 
     auto firstTrackIndex = Edit::maxNumTracks;
     auto overallStartTime = Edit::maximumLength;
 
-    for (auto& clip : clipsToPaste)
+    for (auto clip : clipsToPaste)
     {
         overallStartTime = jmin (overallStartTime, jmax (clip->getPosition().getStart(), range.getStart()));
         firstTrackIndex = jmin (firstTrackIndex, jmax (0, allTracks.indexOf (clip->getTrack())));
     }
 
-    for (auto& clip : clipsToPaste)
+    for (auto clip : clipsToPaste)
     {
         if (clip->getEditTimeRange().overlaps (range))
         {
@@ -480,7 +508,7 @@ void Clipboard::Clips::addSelectedClips (const SelectableList& selectedObjects, 
             {
                 for (int k = 0; k < plugin->getNumAutomatableParameters(); k++)
                 {
-                    auto param = plugin->getAutomatableParameter(k);
+                    auto param = plugin->getAutomatableParameter (k);
 
                     if (param->getCurve().getNumPoints() > 0)
                     {
@@ -488,36 +516,41 @@ void Clipboard::Clips::addSelectedClips (const SelectableList& selectedObjects, 
                         section.pluginName = plugin->getName();
                         section.paramID = param->paramID;
                         section.trackOffset = jmax (0, allTracks.indexOf (trackSection.track) - firstTrackIndex);
-
-                        auto clippedStart = jmax (trackSection.range.getStart(), range.getStart()) - overallStartTime;
-                        auto clippedEnd   = jmin (trackSection.range.getEnd(),   range.getEnd()) - overallStartTime;
+                        section.valueRange = param->getCurve().getValueLimits();
 
                         const double endTolerence = 0.0001;
+                        auto intersection = trackSection.range.getIntersectionWith (range);
+                        auto reducedIntersection = intersection.reduced (endTolerence);
+                        auto clippedStart = intersection.getStart();
+                        auto clippedEnd   = intersection.getEnd();
 
                         for (int l = 0; l < param->getCurve().getNumPoints(); ++l)
                         {
-                            auto pt = param->getCurve().getPoint(l);
+                            auto pt = param->getCurve().getPoint (l);
 
-                            if (pt.time >= clippedStart - endTolerence && pt.time <= clippedEnd + endTolerence)
-                                section.points.add ({ pt.time, pt.value, pt.curve });
+                            if (reducedIntersection.containsInclusive (pt.time))
+                                section.points.push_back ({ pt.time, pt.value, pt.curve });
                         }
 
-                        if (section.points.isEmpty())
+                        if (section.points.empty())
                         {
-                            section.points.insert (0, { clippedStart, param->getCurve().getValueAt (clippedStart), 1.0f });
-                            section.points.add ({ clippedEnd, param->getCurve().getValueAt (clippedEnd), 0.0f });
+                            section.points.push_back ({ clippedStart, param->getCurve().getValueAt (clippedStart), 1.0f });
+                            section.points.push_back ({ clippedEnd, param->getCurve().getValueAt (clippedEnd), 0.0f });
                         }
                         else
                         {
-                            if (section.points.getFirst().time > clippedStart + endTolerence)
-                                section.points.insert (0, { clippedStart, param->getCurve().getValueAt (clippedStart), 0.0f });
+                            if (section.points[0].time > clippedStart + endTolerence)
+                                section.points.insert (section.points.begin(), { clippedStart + endTolerence, param->getCurve().getValueAt (clippedStart + endTolerence), 0.0f });
 
-                            if (section.points.getLast().time < clippedEnd - endTolerence)
-                                section.points.add ({ clippedEnd, param->getCurve().getValueAt (clippedEnd), 0.0f });
+                            if (section.points[section.points.size() - 1].time < clippedEnd - endTolerence)
+                                section.points.push_back ({ clippedEnd - endTolerence, param->getCurve().getValueAt (clippedEnd - endTolerence), 0.0f });
                         }
 
-                        automationCurves.add (section);
-                        section.points.sort();
+                        for (auto& p : section.points)
+                            p.time -= overallStartTime;
+
+                        std::sort (section.points.begin(), section.points.end());
+                        automationCurves.add (std::move (section));
                     }
                 }
             }
@@ -534,8 +567,7 @@ static void fixClipTimes (ValueTree& state, const Clipboard::Clips::ClipInfo& cl
         auto range = tempoSequence.beatsToTime ({ clip.startBeats, clip.startBeats + clip.lengthBeats }) + startOffset;
         start  = range.getStart();
         length = range.getLength();
-        // TODO: this offset calculation isn't right - fix when we have a structure for start/length/offset which can be converted to beats as a whole
-        offset = tempoSequence.beatsToTime (clip.offsetBeats) / tempoSequence.getBeatsPerSecondAt (start);
+        offset = clip.offsetBeats / tempoSequence.getBeatsPerSecondAt (start);
     }
     else
     {
@@ -558,6 +590,37 @@ static void fixClipTimes (ValueTree& state, const Clipboard::Clips::ClipInfo& cl
 
     state.removeProperty (IDs::bpm, nullptr);
     state.removeProperty (IDs::key, nullptr);
+}
+
+static bool pastePointsToCurve (const std::vector<AutomationCurve::AutomationPoint>& points, juce::Range<float> valueRange, AutomationCurve& targetCurve, EditTimeRange targetRange)
+{
+    AutomationCurve newCurve;
+    auto dstRange = targetCurve.getValueLimits();
+    jassert (! dstRange.isEmpty());
+
+    for (auto p : points)
+    {
+        if (dstRange != valueRange)
+        {
+            auto normalised = (p.value - valueRange.getStart()) / valueRange.getLength();
+            p.value = dstRange.getStart() + dstRange.getLength() * normalised;
+        }
+
+        newCurve.addPoint (p.time, p.value, p.curve);
+    }
+
+    if (newCurve.getLength() > 0)
+    {
+        if (targetRange.isEmpty())
+            targetRange = targetRange.withLength (newCurve.getLength());
+        else
+            newCurve.rescaleAllTimes (targetRange.getLength() / newCurve.getLength());
+
+        targetCurve.mergeOtherCurve (newCurve, targetRange, 0.0, 0.0, false, false);
+        return true;
+    }
+
+    return false;
 }
 
 bool Clipboard::Clips::pasteIntoEdit (const EditPastingOptions& options) const
@@ -624,10 +687,9 @@ bool Clipboard::Clips::pasteIntoEdit (const EditPastingOptions& options) const
 
     for (auto& curve : automationCurves)
     {
-        if (! curve.points.isEmpty())
+        if (! curve.points.empty())
         {
-            EditTimeRange curveTimeRange (curve.points.getFirst().time,
-                                          curve.points.getLast().time);
+            EditTimeRange destCurveTimeRange (Range<double>::withStartAndLength (options.startTime, 0.0));
 
             if (auto clipTrack = dynamic_cast<ClipTrack*> (targetTrack->getSiblingTrack (curve.trackOffset, false)))
             {
@@ -637,11 +699,7 @@ bool Clipboard::Clips::pasteIntoEdit (const EditPastingOptions& options) const
                     {
                         if (auto targetParam = plugin->getAutomatableParameterByID (curve.paramID))
                         {
-                            targetParam->getCurve().removePointsInRegion (curveTimeRange.expanded (0.0001));
-
-                            for (auto& pt : curve.points)
-                                targetParam->getCurve().addPoint (pt.time, pt.value, pt.curve);
-
+                            pastePointsToCurve (curve.points, curve.valueRange, targetParam->getCurve(), destCurveTimeRange);
                             break;
                         }
                     }
@@ -962,32 +1020,7 @@ bool Clipboard::AutomationPoints::pasteIntoEdit (const EditPastingOptions&) cons
 
 bool Clipboard::AutomationPoints::pasteAutomationCurve (AutomationCurve& targetCurve, EditTimeRange targetRange) const
 {
-    AutomationCurve newCurve;
-    auto dstRange = targetCurve.getValueLimits();
-
-    for (auto p : points)
-    {
-        if (dstRange != valueRange)
-        {
-            auto normalised = (p.value - valueRange.getStart()) / valueRange.getLength();
-            p.value = dstRange.getStart() + dstRange.getLength() * normalised;
-        }
-
-        newCurve.addPoint (p.time, p.value, p.curve);
-    }
-
-    if (newCurve.getLength() > 0)
-    {
-        if (targetRange.isEmpty())
-            targetRange = targetRange.withLength (newCurve.getLength());
-        else
-            newCurve.rescaleAllTimes (targetRange.getLength() / newCurve.getLength());
-
-        targetCurve.mergeOtherCurve (newCurve, targetRange, 0.0, 0.0, false, false);
-        return true;
-    }
-
-    return false;
+    return pastePointsToCurve (points, valueRange, targetCurve, targetRange);
 }
 
 //==============================================================================
@@ -1011,7 +1044,11 @@ juce::Array<MidiNote*> Clipboard::MIDINotes::pasteIntoClip (MidiClip& clip, cons
     for (auto& n : midiNotes)
         beatRange = beatRange.getUnionWith (n.getRangeBeats());
 
-    auto insertPos = clip.getContentBeatAtTime (cursorPosition);
+    double insertPos = 0.0;
+    if (clip.isLooping())
+        insertPos = clip.getContentBeatAtTime (cursorPosition) + clip.getLoopStartBeats();
+    else
+        insertPos = clip.getContentBeatAtTime (cursorPosition);
 
     if (! selectedNotes.isEmpty())
     {
@@ -1025,12 +1062,16 @@ juce::Array<MidiNote*> Clipboard::MIDINotes::pasteIntoClip (MidiClip& clip, cons
 
     if (clip.isLooping())
     {
-        if (insertPos < 0 || insertPos >= clip.getLoopLengthBeats() - 0.001)
+        const double offsetBeats = clip.getOffsetInBeats() + clip.getLoopStartBeats();
+
+        if (insertPos - offsetBeats < 0 || insertPos - offsetBeats >= clip.getLoopLengthBeats() - 0.001)
             return {};
     }
     else
     {
-        if (insertPos < 0 || insertPos >= clip.getLengthInBeats() - 0.001)
+        const double offsetBeats = clip.getOffsetInBeats();
+
+        if (insertPos - offsetBeats < 0 || insertPos - offsetBeats >= clip.getLengthInBeats() - 0.001)
             return {};
     }
 
@@ -1062,11 +1103,9 @@ bool Clipboard::MIDINotes::pasteIntoEdit (const EditPastingOptions&) const
 //==============================================================================
 namespace
 {
-    static double snapTime (Edit& e, double t)
+    static double snapTimeToNearestBeat (Edit& e, double t)
     {
-        auto& tc = e.getTransport();
-        return tc.snapToTimecode ? tc.getSnapType().roundTimeNearest (t, e.tempoSequence)
-                                 : t;
+        return TimecodeSnapType::get1BeatSnapType().roundTimeNearest (t, e.tempoSequence);
     }
 }
 
@@ -1083,7 +1122,7 @@ bool Clipboard::Pitches::pasteIntoEdit (const EditPastingOptions& options) const
     if (options.selectionManager != nullptr)
         options.selectionManager->deselectAll();
 
-    auto startBeat = options.edit.tempoSequence.timeToBeats (snapTime (options.edit, options.edit.getTransport().position));
+    auto startBeat = options.edit.tempoSequence.timeToBeats (snapTimeToNearestBeat (options.edit, options.startTime));
     auto firstPitchBeat = static_cast<double> (pitches.front().getProperty (IDs::startBeat));
     auto offset = startBeat - firstPitchBeat;
     auto um = &options.edit.getUndoManager();
@@ -1120,7 +1159,7 @@ bool Clipboard::TimeSigs::pasteIntoEdit (const EditPastingOptions& options) cons
     if (options.selectionManager != nullptr)
         options.selectionManager->deselectAll();
 
-    auto startBeat = options.edit.tempoSequence.timeToBeats (snapTime (options.edit, options.edit.getTransport().position));
+    auto startBeat = options.edit.tempoSequence.timeToBeats (snapTimeToNearestBeat (options.edit, options.startTime));
     auto firstTimeSigBeat = static_cast<double> (timeSigs.front().getProperty (IDs::startBeat));
     auto offset = startBeat - firstTimeSigBeat;
     auto um = &options.edit.getUndoManager();
@@ -1216,7 +1255,10 @@ bool Clipboard::Plugins::pasteIntoEdit (const EditPastingOptions& options) const
     CRASH_TRACER
     bool anyPasted = false;
 
-    for (auto& item : plugins)
+    auto pluginsToPaste = plugins;
+    std::reverse (pluginsToPaste.begin(), pluginsToPaste.end()); // Reverse the array so they get pasted in the correct order
+
+    for (auto& item : pluginsToPaste)
     {
         auto stateCopy = item.createCopy();
         EditItemID::remapIDs (stateCopy, nullptr, options.edit);

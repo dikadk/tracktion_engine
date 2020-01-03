@@ -104,6 +104,12 @@ struct TransportControl::TransportState : private ValueTree::Listener
 
         videoPosition.referTo (transientState, IDs::videoPosition, um);
         forceVideoJump.referTo (transientState, IDs::forceVideoJump, um);
+        
+        // CachedValues need to be set so they aren't using their default values
+        // to avoid spurious listener callbacks
+        playing = playing.get();
+        recording = recording.get();
+        safeRecording = safeRecording.get();
 
         state.addListener (this);
         transientState.addListener (this);
@@ -593,15 +599,10 @@ void TransportControl::ensureContextAllocated (bool alwaysReallocate)
         transportState->playbackContextAllocation = transportState->playbackContextAllocation + 1;
     }
 
-    if (isPlaying() || isRecording() || edit.playInStopEnabled)
-    {
-        if (alwaysReallocate)
-            playbackContext->createPlayAudioNodes (start);
-        else
-            playbackContext->createPlayAudioNodesIfNeeded (start);
-    }
+    if (alwaysReallocate)
+        playbackContext->createPlayAudioNodes (start);
     else
-        playbackContext->clearNodes();
+        playbackContext->createPlayAudioNodesIfNeeded (start);
 }
 
 void TransportControl::freePlaybackContext()
@@ -1247,10 +1248,12 @@ bool TransportControl::performRecord()
                 // Set the playhead loop times before preparing the context as this will be used by
                 // the RecordingContext to initialise itself
                 playbackContext->playhead.setLoopTimes (false, { prerollStart, transportState->endTime });
-                playbackContext->prepareForRecording (prerollStart, transportState->startTime);
                 playbackContext->playhead.play ({ prerollStart, transportState->endTime }, false);
                 playbackContext->playhead.setPosition (prerollStart);
                 position = prerollStart;
+
+                // Prepare the recordings after the playhead has been setup to avoid synchronisation problems
+                playbackContext->prepareForRecording (prerollStart, transportState->startTime);
 
                 if (edit.getNumCountInBeats() > 0)
                     edit.setClickTrackRange ({ prerollStart, transportState->startTime });

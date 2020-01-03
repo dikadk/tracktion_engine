@@ -15,8 +15,8 @@ template<typename ObjectType>
 struct TempoAndTimeSigListBase  : public ValueTreeObjectList<ObjectType>,
                                   public AsyncUpdater
 {
-    TempoAndTimeSigListBase (TempoSequence& ts, const ValueTree& parent)
-        : ValueTreeObjectList<ObjectType> (parent), sequence (ts)
+    TempoAndTimeSigListBase (TempoSequence& ts, const ValueTree& parentTree)
+        : ValueTreeObjectList<ObjectType> (parentTree), sequence (ts)
     {
     }
 
@@ -42,8 +42,8 @@ struct TempoAndTimeSigListBase  : public ValueTreeObjectList<ObjectType>,
 //==============================================================================
 struct TempoSequence::TempoSettingList  : public TempoAndTimeSigListBase<TempoSetting>
 {
-    TempoSettingList (TempoSequence& ts, const ValueTree& parent)
-        : TempoAndTimeSigListBase<TempoSetting> (ts, parent)
+    TempoSettingList (TempoSequence& ts, const ValueTree& parentTree)
+        : TempoAndTimeSigListBase<TempoSetting> (ts, parentTree)
     {
         rebuildObjects();
     }
@@ -75,8 +75,8 @@ struct TempoSequence::TempoSettingList  : public TempoAndTimeSigListBase<TempoSe
 //==============================================================================
 struct TempoSequence::TimeSigList  : public TempoAndTimeSigListBase<TimeSigSetting>
 {
-    TimeSigList (TempoSequence& ts, const ValueTree& parent)
-        : TempoAndTimeSigListBase<TimeSigSetting> (ts, parent)
+    TimeSigList (TempoSequence& ts, const ValueTree& parentTree)
+        : TempoAndTimeSigListBase<TimeSigSetting> (ts, parentTree)
     {
         rebuildObjects();
     }
@@ -297,7 +297,7 @@ void TempoSequence::removeTempo (int index, bool remapEdit)
     if (index == 0)
         return;
 
-    if (auto* ts = getTempo (index))
+    if (auto ts = getTempo (index))
     {
         if (getNumTempos() > 1)
         {
@@ -856,6 +856,9 @@ void TempoSequence::updateTempoDataIfNeeded() const
 {
     if (tempos->isUpdatePending())
         tempos->handleAsyncUpdate();
+
+    if (timeSigs->isUpdatePending())
+        timeSigs->handleAsyncUpdate();
 }
 
 void TempoSequence::handleAsyncUpdate()
@@ -914,8 +917,8 @@ TempoSequence::BarsAndBeats TempoSequencePosition::getBarsBeatsTime() const
     auto beatsSinceFirstBar = (time - it.timeOfFirstBar) * it.beatsPerSecond;
 
     if (beatsSinceFirstBar < 0)
-        return { it.barNumberOfFirstBar - 1,
-                 it.prevNumerator + beatsSinceFirstBar };
+        return { it.barNumberOfFirstBar + (int) std::floor (beatsSinceFirstBar / it.numerator),
+                 std::fmod (std::fmod (beatsSinceFirstBar, it.numerator) + it.numerator, it.numerator) };
 
     return { it.barNumberOfFirstBar + (int) std::floor (beatsSinceFirstBar / it.numerator),
              std::fmod (beatsSinceFirstBar, it.numerator) };
@@ -1166,5 +1169,146 @@ void EditTimecodeRemapperSnapshot::remapEdit (Edit& ed)
         for (int i = a.beats.size(); --i >= 0;)
             a.curve.setPointTime (i, tempoSequence.beatsToTime (a.beats.getUnchecked (i)));
 }
+
+//==============================================================================
+//==============================================================================
+class TempoSequenceTests : public UnitTest
+{
+public:
+    TempoSequenceTests() : UnitTest ("TempoSequence", "Tracktion") {}
+
+    //==============================================================================
+    void runTest() override
+    {
+        runPositionTests();
+        runModificationTests();
+    }
+
+private:
+    void expectBarsAndBeats (TempoSequencePosition& pos, int bars, int beats)
+    {
+        auto barsBeats = pos.getBarsBeatsTime();
+        expectEquals (barsBeats.bars, bars);
+        expectEquals (barsBeats.getWholeBeats(), beats);
+    }
+
+    void expectTempoSetting (TempoSetting& tempo, double startTime, double bpm, float curve)
+    {
+        expectWithinAbsoluteError (tempo.getStartTime(), startTime, 0.001);
+        expectWithinAbsoluteError (tempo.getBpm(), bpm, 0.001);
+        expectWithinAbsoluteError (tempo.getCurve(), curve, 0.001f);
+    }
+
+    void runPositionTests()
+    {
+        auto edit = Edit::createSingleTrackEdit (Engine::getInstance());
+
+        beginTest ("Defaults");
+        {
+            TempoSequencePosition pos (edit->tempoSequence);
+            auto& section = pos.getCurrentTempo();
+
+            expectEquals (section.bpm, 120.0);
+            expectEquals (section.startTime, 0.0);
+            expectEquals (section.startBeatInEdit, 0.0);
+            expectEquals (section.secondsPerBeat, 0.5);
+            expectEquals (section.beatsPerSecond, 2.0);
+            expectEquals (section.ppqAtStart, 0.0);
+            expectEquals (section.timeOfFirstBar, 0.0);
+            expectEquals (section.beatsUntilFirstBar, 0.0);
+            expectEquals (section.barNumberOfFirstBar, 0);
+            expectEquals (section.numerator, 4);
+            expectEquals (section.prevNumerator, 4);
+            expectEquals (section.denominator, 4);
+            expect (! section.triplets);
+        }
+
+        beginTest ("Positive sequences");
+        {
+            TempoSequencePosition pos (edit->tempoSequence);
+            pos.setTime (0.0);
+
+            expectBarsAndBeats (pos, 0, 0);
+            pos.addBeats (1.0);
+            expectBarsAndBeats (pos, 0, 1);
+            pos.addBeats (1.0);
+            expectBarsAndBeats (pos, 0, 2);
+            pos.addBeats (1.0);
+            expectBarsAndBeats (pos, 0, 3);
+            pos.addBeats (1.0);
+            expectBarsAndBeats (pos, 1, 0);
+
+            pos.addBars (1);
+            expectBarsAndBeats (pos, 2, 0);
+            pos.addBeats (1.0);
+            expectBarsAndBeats (pos, 2, 1);
+            pos.addBeats (1.0);
+            expectBarsAndBeats (pos, 2, 2);
+            pos.addBeats (1.0);
+            expectBarsAndBeats (pos, 2, 3);
+        }
+
+        beginTest ("Negative sequences");
+        {
+            TempoSequencePosition pos (edit->tempoSequence);
+            pos.setTime (0.0);
+            pos.addBars (-2);
+
+            expectBarsAndBeats (pos, -2, 0);
+            pos.addBeats (1.0);
+            expectBarsAndBeats (pos, -2, 1);
+            pos.addBeats (1.0);
+            expectBarsAndBeats (pos, -2, 2);
+            pos.addBeats (1.0);
+            expectBarsAndBeats (pos, -2, 3);
+            pos.addBeats (1.0);
+            expectBarsAndBeats (pos, -1, 0);
+            pos.addBeats (1.0);
+            expectBarsAndBeats (pos, -1, 1);
+            pos.addBeats (1.0);
+            expectBarsAndBeats (pos, -1, 2);
+            pos.addBeats (1.0);
+            expectBarsAndBeats (pos, -1, 3);
+            pos.addBeats (1.0);
+            expectBarsAndBeats (pos, 0, 0);
+            pos.addBeats (1.0);
+            expectBarsAndBeats (pos, 0, 1);
+            pos.addBeats (1.0);
+            expectBarsAndBeats (pos, 0, 2);
+            pos.addBeats (1.0);
+            expectBarsAndBeats (pos, 0, 3);
+            pos.addBeats (1.0);
+            expectBarsAndBeats (pos, 1, 0);
+            pos.addBeats (1.0);
+        }
+    }
+
+    void runModificationTests()
+    {
+        auto edit = Edit::createSingleTrackEdit (Engine::getInstance());
+        auto& ts = edit->tempoSequence;
+
+        beginTest ("Insertions");
+        {
+            expectWithinAbsoluteError (ts.getTempoAt (0.0).getBpm(), 120.0, 0.001);
+            expectWithinAbsoluteError (ts.getTempoAt (0.0).getCurve(), 1.0f, 0.001f);
+
+            ts.insertTempo (4.0, 120, 0.0);
+            ts.insertTempo (4.0, 300, 0.0);
+            ts.insertTempo (8.0, 300, 0.0);
+
+            expectTempoSetting (*ts.getTempo (0), 0.0, 120.0, 1.0f);
+            expectTempoSetting (*ts.getTempo (1), 2.0, 120.0, 0.0f);
+            expectTempoSetting (*ts.getTempo (2), 2.0, 300.0, 0.0f);
+            expectTempoSetting (*ts.getTempo (3), 2.8, 300.0, 0.0f);
+
+            expectTempoSetting (ts.getTempoAt (0.0), 0.0, 120.0, 1.0f);
+            expectTempoSetting (ts.getTempoAt (2.0), 2.0, 300.0, 0.0f);
+            expectTempoSetting (ts.getTempoAt (3.0), 2.8, 300.0, 0.0f);
+        }
+    }
+};
+
+static TempoSequenceTests tempoSequenceTests;
 
 }

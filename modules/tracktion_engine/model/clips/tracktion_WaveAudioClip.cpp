@@ -172,6 +172,21 @@ void WaveAudioClip::addTake (ProjectItemID id)
     takesTree.addChild (take, -1, um);
 }
 
+void WaveAudioClip::addTake (const juce::File& f)
+{
+    auto um = getUndoManager();
+    auto takesTree = state.getOrCreateChildWithName (IDs::TAKES, um);
+
+    ValueTree take (IDs::TAKE);
+
+    {
+        SourceFileReference sfr (edit, take, IDs::source);
+        sfr.setToDirectFileReference (f, true);
+    }
+
+    takesTree.addChild (take, -1, um);
+}
+
 int WaveAudioClip::getNumTakes (bool includeComps)
 {
     if (includeComps)
@@ -475,7 +490,7 @@ Clip::Array WaveAudioClip::unpackTakes (bool toNewTracks)
                 targetTrack = t->edit.insertNewAudioTrack (TrackInsertPoint (t->getParentTrack(), t.get()), nullptr);
 
             if (targetTrack != nullptr)
-                newClips.add (targetTrack->insertWaveClip (getTakeDescriptions()[i], takes[i], getPosition(), false));
+                newClips.add (targetTrack->insertWaveClip (getTakeDescriptions()[i], takes[i], getPosition(), false).get());
 
             t = targetTrack;
         }

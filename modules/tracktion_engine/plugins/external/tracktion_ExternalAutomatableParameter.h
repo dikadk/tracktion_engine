@@ -19,8 +19,8 @@ public:
     ExternalAutomatableParameter (const juce::String& paramID,
                                   const juce::String& name,
                                   ExternalPlugin& owner, int parameterIndex_,
-                                  juce::Range<float> valueRange)
-        : AutomatableParameter (paramID, name, owner, valueRange),
+                                  juce::Range<float> valueRangeToUse)
+        : AutomatableParameter (paramID, name, owner, valueRangeToUse),
           parameterIndex (parameterIndex_)
     {
         if (auto vstXML = owner.getVSTXML())
@@ -62,10 +62,10 @@ public:
     {
         if (auto p = getParam())
             return p->getDefaultValue();
-        
+
         return 0.0f;
     }
-    
+
     void parameterChanged (float newValue, bool byAutomation) override
     {
         if (auto p = getParam())
@@ -136,9 +136,13 @@ public:
             return displayName;
 
         if (auto p = getParam())
-            return p->getName (1024);
+		{
+            auto name = p->getName (1024);
+			if (name.isNotEmpty())
+				return name;
+		}
 
-        return {};
+        return TRANS("Unnamed") + " " + String (parameterIndex + 1);
     }
 
     int getParameterIndex() const noexcept
@@ -279,7 +283,7 @@ private:
     juce::AudioProcessorParameter* getParam() const noexcept
     {
         if (auto pi = getPlugin())
-            return pi->getParameters().getUnchecked (parameterIndex);
+            return pi->getParameters()[parameterIndex];
 
         return {};
     }

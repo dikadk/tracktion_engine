@@ -70,6 +70,7 @@ namespace IDs
     DECLARE_ID (INPUTDEVICES)
     DECLARE_ID (INPUTDEVICE)
     DECLARE_ID (INPUTDEVICEINSTANCE)
+    DECLARE_ID (INPUTDEVICEDESTINATION)
     DECLARE_ID (sourceTrack)
     DECLARE_ID (targetTrack)
     DECLARE_ID (targetIndex)
@@ -347,6 +348,7 @@ namespace IDs
     DECLARE_ID (stretchMode)
     DECLARE_ID (pitchChange)
     DECLARE_ID (autoPitch)
+    DECLARE_ID (autoPitchMode)
     DECLARE_ID (autoTempo)
     DECLARE_ID (warpTime)
     DECLARE_ID (isReversed)
@@ -566,6 +568,8 @@ namespace IDs
     DECLARE_ID (ampDecay)
     DECLARE_ID (ampSustain)
     DECLARE_ID (ampRelease)
+    DECLARE_ID (ampVelocity)
+    DECLARE_ID (ampAnalog)
     DECLARE_ID (filterAttack)
     DECLARE_ID (filterDecay)
     DECLARE_ID (filterSustain)
@@ -574,6 +578,7 @@ namespace IDs
     DECLARE_ID (filterResonance)
     DECLARE_ID (filterAmount)
     DECLARE_ID (filterKey)
+    DECLARE_ID (filterVelocity)
     DECLARE_ID (filterType)
     DECLARE_ID (filterSlope)
     DECLARE_ID (waveShape)
@@ -582,6 +587,10 @@ namespace IDs
     DECLARE_ID (pulseWidth)
     DECLARE_ID (voices)
     DECLARE_ID (detune)
+    DECLARE_ID (distortionOn)
+    DECLARE_ID (reverbOn)
+    DECLARE_ID (delayOn)
+    DECLARE_ID (chorusOn)
     DECLARE_ID (distortion)
     DECLARE_ID (reverbSize)
     DECLARE_ID (reverbDamping)
@@ -610,7 +619,9 @@ namespace IDs
     DECLARE_ID (chorusDepth)
     DECLARE_ID (chrousWidth)
     DECLARE_ID (chorusMix)
-
+    DECLARE_ID (ARRANGERTRACK)
+    DECLARE_ID (ARRANGERCLIP)
+    
     #undef DECLARE_ID
 }
 

@@ -28,7 +28,7 @@
 
 #include "common/Utilities.h"
 
-static String organPatch = "<PLUGIN type=\"4osc\" windowLocked=\"1\" id=\"1069\" enabled=\"1\" filterType=\"1\" presetDirty=\"0\" presetName=\"4OSC: Organ\" filterFreq=\"127.00000000000000000000\" ampAttack=\"0.60000002384185791016\" ampDecay=\"10.00000000000000000000\" ampSustain=\"100.00000000000000000000\" ampRelease=\"0.40000000596046447754\" waveShape1=\"5\" tune2=\"-24.00000000000000000000\" waveShape2=\"5\"> <MACROPARAMETERS id=\"1069\"/> <MODIFIERASSIGNMENTS/> <MODMATRIX/> </PLUGIN>";
+static String organPatch = "<PLUGIN type=\"4osc\" windowLocked=\"1\" id=\"1069\" enabled=\"1\" filterType=\"1\" presetDirty=\"0\" presetName=\"4OSC: Organ\" filterFreq=\"127.00000000000000000000\" ampAttack=\"0.60000002384185791016\" ampDecay=\"10.00000000000000000000\" ampSustain=\"100.00000000000000000000\" ampRelease=\"0.40000000596046447754\" waveShape1=\"4\" tune2=\"-24.00000000000000000000\" waveShape2=\"4\"> <MACROPARAMETERS id=\"1069\"/> <MODIFIERASSIGNMENTS/> <MODMATRIX/> </PLUGIN>";
 
 static String leadPatch = "<PLUGIN type=\"4osc\" windowLocked=\"1\" id=\"1069\" enabled=\"1\" filterType=\"1\" waveShape1=\"3\" filterFreq=\"100\"><MACROPARAMETERS id=\"1069\"/><MODIFIERASSIGNMENTS/><MODMATRIX/></PLUGIN>";
 
@@ -105,11 +105,11 @@ public:
         if (b == &midiInputsBox)
         {
             auto& dm = engine.getDeviceManager();
-            if (auto t = edit.getOrInsertAudioTrackAt (0))
+            if (auto t = EngineHelpers::getOrInsertAudioTrackAt (edit, 1))
                 if (auto dev = dm.getMidiInDevice (midiInputsBox.getSelectedItemIndex()))
                     for (auto instance : edit.getAllInputDevices())
                         if (&instance->getInputDevice() == dev)
-                            instance->setTargetTrack (t.get(), 0);
+                            instance->setTargetTrack (*t, 0, true);
             
             edit.restartPlayback();
         }
@@ -229,37 +229,37 @@ private:
         //==============================================================================
         if (auto synth = dynamic_cast<te::FourOscPlugin*> (edit.getPluginCache().createNewPlugin (te::FourOscPlugin::xmlTypeName, {}).get()))
         {
-            XmlDocument doc (organPatch);
-            if (ScopedPointer<XmlElement> e = doc.getDocumentElement())
+            if (auto e = parseXML (organPatch))
             {
                 auto vt = ValueTree::fromXml (*e);
+
                 if (vt.isValid())
                     synth->restorePluginStateFromValueTree (vt);
             }
             
-            if (auto t = edit.getOrInsertAudioTrackAt (0))
+            if (auto t = EngineHelpers::getOrInsertAudioTrackAt (edit, 0))
                 t->pluginList.insertPlugin (*synth, 0, nullptr);
         }
         
         //==============================================================================
         if (auto synth = dynamic_cast<te::FourOscPlugin*> (edit.getPluginCache().createNewPlugin (te::FourOscPlugin::xmlTypeName, {}).get()))
         {
-            XmlDocument doc (leadPatch);
-            if (ScopedPointer<XmlElement> e = doc.getDocumentElement())
+            if (auto e = parseXML (leadPatch))
             {
                 auto vt = ValueTree::fromXml (*e);
+
                 if (vt.isValid())
                     synth->restorePluginStateFromValueTree (vt);
             }
             
-            if (auto t = edit.getOrInsertAudioTrackAt (1))
+            if (auto t = EngineHelpers::getOrInsertAudioTrackAt (edit, 1))
                 t->pluginList.insertPlugin (*synth, 0, nullptr);
         }
     }
     
     te::MidiClip::Ptr createMIDIClip()
     {
-        if (auto track = edit.getOrInsertAudioTrackAt (0))
+        if (auto track = EngineHelpers::getOrInsertAudioTrackAt (edit, 0))
         {
             // Find length of 8 bars
             const te::EditTimeRange editTimeRange (0, edit.tempoSequence.barsBeatsToTime ({ 8, 0.0 }));
@@ -290,7 +290,7 @@ private:
     
     te::MidiClip::Ptr getClip()
     {
-        if (auto track = edit.getOrInsertAudioTrackAt (0))
+        if (auto track = EngineHelpers::getOrInsertAudioTrackAt (edit, 0))
             if (auto clip = dynamic_cast<te::MidiClip*> (track->getClips()[0]))
                 return *clip;
         

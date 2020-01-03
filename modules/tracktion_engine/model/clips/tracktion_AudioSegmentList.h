@@ -44,7 +44,7 @@ public:
         bool operator== (const Segment&) const;
         bool operator!= (const Segment&) const;
 
-    private:
+    //private:
         friend class AudioSegmentList;
 
         double start = 0, length = 0;
@@ -69,6 +69,9 @@ private:
     AudioSegmentList (AudioClipBase&);
     AudioSegmentList (AudioClipBase&, bool relativeTime, bool crossfade);
 
+    void chopSegmentsForChords();
+    void chopSegment (Segment& seg, double at, int insertPos);
+
     AudioClipBase& clip;
     juce::Array<Segment> segments;
     double crossfadeTime = 0;
@@ -82,6 +85,8 @@ private:
     void crossFadeSegments();
     void mergeSegments (double sampleRate);
     void initialiseSegment (Segment&, double startBeat, double endBeat, double sampleRate);
+
+    juce::OwnedArray<PatternGenerator::ProgressionItem> progression;
 };
 
 } // namespace tracktion_engine
