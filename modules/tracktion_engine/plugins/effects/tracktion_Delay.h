@@ -77,7 +77,7 @@ public:
     juce::CachedValue<float> feedbackValue, mixValue;
     juce::CachedValue<int> lengthMs;
 
-    AutomatableParameter::Ptr feedbackDb, mixProportion;
+    AutomatableParameter::Ptr feedbackDb, mixProportion, length;
 
     static float getMinDelayFeedbackDb() noexcept       { return -30.0f; }
 
