@@ -17,6 +17,10 @@ DelayPlugin::DelayPlugin (PluginCreationInfo info) : Plugin (info)
                               [] (float value)              { return juce::Decibels::toString (value); },
                               [] (const juce::String& s)    { return dbStringToDb (s); });
 
+    length    = addParam ("length", TRANS("Length"), { getMinDelayFeedbackDb(), 0.0f },
+                              [] (float value)       { return juce::String(value)+" ms"; },
+                              [] (const String& s)   { return s.getFloatValue(); });
+
     mixProportion = addParam ("mix proportion", TRANS("Mix proportion"), { 0.0f, 1.0f },
                               [] (float value)              { return juce::String (juce::roundToInt (value * 100.0f)) + "% wet"; },
                               [] (const juce::String& s)    { return s.getFloatValue() / 100.0f; });
@@ -29,6 +33,7 @@ DelayPlugin::DelayPlugin (PluginCreationInfo info) : Plugin (info)
 
     feedbackDb->attachToCurrentValue (feedbackValue);
     mixProportion->attachToCurrentValue (mixValue);
+    length->attachToCurrentValue (lengthMs);
 }
 
 DelayPlugin::~DelayPlugin()
