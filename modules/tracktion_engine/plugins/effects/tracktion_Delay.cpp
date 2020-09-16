@@ -17,7 +17,7 @@ DelayPlugin::DelayPlugin (PluginCreationInfo info) : Plugin (info)
                               [] (float value)       { return Decibels::toString (value); },
                               [] (const String& s)   { return dbStringToDb (s); });
 
-    length    = addParam ("length", TRANS("Length"), { getMinDelayFeedbackDb(), 0.0f },
+    length    = addParam ("length", TRANS("Length"), { 1, 1000.f },
                               [] (float value)       { return juce::String(value)+" ms"; },
                               [] (const String& s)   { return s.getFloatValue(); });
 
