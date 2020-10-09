@@ -32,6 +32,7 @@
 
 //==============================================================================
 class MidiRecordingDemo  : public Component,
+                           public juce::MidiKeyboardStateListener,
                            private ChangeListener
 {
 public:
@@ -82,6 +83,8 @@ public:
         
         setupButtons();
         
+        createVirtualMidiAndAssignToTrack();
+        
         setSize (600, 400);
     }
 
@@ -113,6 +116,8 @@ public:
         topR = r.removeFromTop (30);
         editNameLabel.setBounds (topR);
         
+        midiComp->setBounds(r.removeFromBottom(50));
+        
         if (editComponent != nullptr)
             editComponent->setBounds (r);
     }
@@ -123,7 +128,10 @@ private:
     te::SelectionManager selectionManager { engine };
     std::unique_ptr<te::Edit> edit;
     std::unique_ptr<EditComponent> editComponent;
-
+    std::unique_ptr<MidiKeyboardComponent> midiComp;
+    
+    te::VirtualMidiInputDevice* virtualMidi;
+    
     TextButton settingsButton { "Settings" }, pluginsButton { "Plugins" }, newEditButton { "New" }, playPauseButton { "Play" },
                showEditButton { "Show Edit" }, newTrackButton { "New Track" }, deleteButton { "Delete" }, recordButton { "Record" };
     Label editNameLabel { "No Edit Loaded" };
@@ -278,6 +286,66 @@ private:
         }
         
         edit->restartPlayback();
+    }
+    
+    void createVirtualMidiAndAssignToTrack(){
+            auto& dm = engine.getDeviceManager();
+        
+            juce::String virtualDeviceName("VirtualMidiInputDevice");
+            auto result = dm.createVirtualMidiDevice(virtualDeviceName);
+            DBG(result.getErrorMessage());
+
+            for (const auto instance : edit->getAllInputDevices()) {
+                DBG(instance->getInputDevice().getName());
+                if (instance->getInputDevice().getDeviceType() == te::InputDevice::virtualMidiDevice &&
+                    instance->getInputDevice().getName() == virtualDeviceName) {
+                    if(auto inputTrack = EngineHelpers::getOrInsertAudioTrackAt(*edit, 0)){
+                        instance->setTargetTrack(*inputTrack, 0, true);
+                        instance->isLivePlayEnabled(*inputTrack);
+                        
+                        inputTrack->setName("InputTrack");
+                    
+                        if(auto destTrack = EngineHelpers::getOrInsertAudioTrackAt(*edit, 1)){
+                            destTrack->setName("DestTrack");
+                            
+                            //Setup MidiTrackInput
+                            te::InputDevice& id = inputTrack->getMidiInputDevice();
+
+                            // Make the track's InputDeviceInstance visible to the EditPlaybackContext
+                            edit->getEditInputDevices().getInstanceStateForInputDevice (id);
+
+                            if (auto epc = edit->getCurrentPlaybackContext())
+                                if (auto sourceTrackInputDeviceInstance = epc->getInputFor (&id)){
+                                    sourceTrackInputDeviceInstance->setRecordingEnabled (*destTrack, true);
+                                    sourceTrackInputDeviceInstance->setTargetTrack (*destTrack, 0, true);
+                                    sourceTrackInputDeviceInstance->isLivePlayEnabled(*destTrack);
+                                }
+
+                        }
+                    }
+                    virtualMidi = dynamic_cast<te::VirtualMidiInputDevice * >(&instance->getInputDevice());
+                }
+            }
+        
+        
+        midiComp = std::make_unique<MidiKeyboardComponent>(virtualMidi->keyboardState,
+                                                                          juce::MidiKeyboardComponent::horizontalKeyboard);
+        
+        virtualMidi->keyboardState.addListener(this);
+        addAndMakeVisible(*midiComp);
+    }
+    
+    
+    void handleNoteOn(MidiKeyboardState *source, int midiChannel, int midiNoteNumber, float velocity) {
+        DBG("Note On");
+        auto message = MidiMessage::noteOn(midiChannel, midiNoteNumber, 1 - velocity);
+        virtualMidi->handleIncomingMidiMessage(message);
+    }
+
+    void handleNoteOff(MidiKeyboardState *source, int midiChannel, int midiNoteNumber, float velocity) {
+        DBG("Note Off");
+        auto message = MidiMessage::noteOff(midiChannel, midiNoteNumber, 1 - velocity);
+        virtualMidi->handleIncomingMidiMessage(message);
     }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MidiRecordingDemo)
