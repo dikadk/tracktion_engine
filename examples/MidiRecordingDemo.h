@@ -309,7 +309,7 @@ private:
                             destTrack->setName("DestTrack");
                             
                             //Setup MidiTrackInput
-                            te::InputDevice& id = inputTrack->getMidiInputDevice();
+                            te::InputDevice& id = inputTrack->getWaveInputDevice();
 
                             // Make the track's InputDeviceInstance visible to the EditPlaybackContext
                             edit->getEditInputDevices().getInstanceStateForInputDevice (id);
