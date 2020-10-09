@@ -295,37 +295,46 @@ private:
             auto result = dm.createVirtualMidiDevice(virtualDeviceName);
             DBG(result.getErrorMessage());
 
-            for (const auto instance : edit->getAllInputDevices()) {
-                DBG(instance->getInputDevice().getName());
-                if (instance->getInputDevice().getDeviceType() == te::InputDevice::virtualMidiDevice &&
-                    instance->getInputDevice().getName() == virtualDeviceName) {
-                    if(auto inputTrack = EngineHelpers::getOrInsertAudioTrackAt(*edit, 0)){
-                        instance->setTargetTrack(*inputTrack, 0, true);
-                        instance->isLivePlayEnabled(*inputTrack);
-                        
-                        inputTrack->setName("InputTrack");
-                    
-                        if(auto destTrack = EngineHelpers::getOrInsertAudioTrackAt(*edit, 1)){
-                            destTrack->setName("DestTrack");
+        for (const auto instance : edit->getAllInputDevices())
+                    {
+                        DBG(instance->getInputDevice().getName());
+
+                        if (instance->getInputDevice().getDeviceType() == te::InputDevice::virtualMidiDevice
+                            && instance->getInputDevice().getName() == virtualDeviceName)
+                        {
+                            if (auto inputTrack = EngineHelpers::getOrInsertAudioTrackAt(*edit, 0))
+                            {
+                                instance->setTargetTrack(*inputTrack, 0, true);
+                                inputTrack->setName("InputTrack");
                             
-                            //Setup MidiTrackInput
-                            te::InputDevice& id = inputTrack->getWaveInputDevice();
+                                if (auto destTrack = EngineHelpers::getOrInsertAudioTrackAt(*edit, 1))
+                                {
+                                    destTrack->setName("DestTrack");
+                                    
+                                    //Setup MidiTrackInput
+                                    te::InputDevice& id = inputTrack->getMidiInputDevice();
 
-                            // Make the track's InputDeviceInstance visible to the EditPlaybackContext
-                            edit->getEditInputDevices().getInstanceStateForInputDevice (id);
+                                    // Make the track's InputDeviceInstance visible to the EditPlaybackContext
+                                    edit->getEditInputDevices().getInstanceStateForInputDevice (id);
 
-                            if (auto epc = edit->getCurrentPlaybackContext())
-                                if (auto sourceTrackInputDeviceInstance = epc->getInputFor (&id)){
-                                    sourceTrackInputDeviceInstance->setRecordingEnabled (*destTrack, true);
-                                    sourceTrackInputDeviceInstance->setTargetTrack (*destTrack, 0, true);
-                                    sourceTrackInputDeviceInstance->isLivePlayEnabled(*destTrack);
+                                    if (auto epc = edit->getCurrentPlaybackContext())
+                                    {
+                                        if (auto sourceTrackInputDeviceInstance = epc->getInputFor (&id))
+                                        {
+                                            sourceTrackInputDeviceInstance->setTargetTrack (*destTrack, 0, true);
+                                            sourceTrackInputDeviceInstance->setRecordingEnabled (*destTrack, true);
+                                            
+                                            DBG(sourceTrackInputDeviceInstance->state.toXmlString());
+                                            DBG(inputTrack->state.toXmlString());
+                                            DBG(destTrack->state.toXmlString());
+                                        }
+                                    }
                                 }
+                            }
 
+                            virtualMidi = dynamic_cast<te::VirtualMidiInputDevice * >(&instance->getInputDevice());
                         }
                     }
-                    virtualMidi = dynamic_cast<te::VirtualMidiInputDevice * >(&instance->getInputDevice());
-                }
-            }
         
         
         midiComp = std::make_unique<MidiKeyboardComponent>(virtualMidi->keyboardState,
