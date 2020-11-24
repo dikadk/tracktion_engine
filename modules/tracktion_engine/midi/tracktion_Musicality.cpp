@@ -566,14 +566,19 @@ PatternGenerator::ProgressionItem::ProgressionItem (PatternGenerator& g, const j
 {
     auto um = temporary ? nullptr : g.clip.getUndoManager();
 
-    chordName.referTo (state, IDs::name, um);
+    chordName.referTo (state, IDs::chordName, um);
     pitches.referTo (state, IDs::pitches, um);
     lengthInBeats.referTo (state, IDs::length, um, 4);
     octave.referTo (state, IDs::octave, um);
     inversion.referTo (state, IDs::inversion, um);
 
     // Chord name format changed between W8 and W9 - update to new version
-    chordName = fixLegacyChordNames (chordName);
+    juce::String oldName = state[IDs::name];
+    if (oldName.isNotEmpty() && chordName.get().isEmpty())
+	{
+        chordName = fixLegacyChordNames (oldName);
+        state.removeProperty (IDs::name, nullptr);
+    }
 }
 
 PatternGenerator::ProgressionItem::~ProgressionItem() noexcept
@@ -702,6 +707,46 @@ int PatternGenerator::ProgressionItem::getRootNote (int key, const Scale& scale)
     return 0;
 }
 
+
+//==============================================================================
+//==============================================================================
+struct PatternGenerator::AutoUpdateManager : private ValueTreeAllEventListener,
+                                             public juce::AsyncUpdater
+{
+    AutoUpdateManager (PatternGenerator& owner_)
+        : owner (owner_)
+    {
+        owner.clip.state.addListener (this);
+    }
+
+    ~AutoUpdateManager() override
+    {
+        owner.clip.state.removeListener (this);
+    }
+
+    void valueTreeChanged() override
+    {}
+    
+    void valueTreePropertyChanged (juce::ValueTree& p, const juce::Identifier& c) override
+    {
+        if (Clip::isClipState (p))
+            if (c == IDs::start || c == IDs::length || c == IDs::offset)
+                if (! owner.clip.edit.getUndoManager().isPerformingUndoRedo())
+                    triggerAsyncUpdate();
+    }
+
+    void handleAsyncUpdate() override
+    {
+        if (owner.getAutoUpdate())
+            owner.generatePattern();
+    }
+
+private:
+    PatternGenerator& owner;
+};
+
+
+//==============================================================================
 //==============================================================================
 const int PatternGenerator::scaleRootGlobalTrack    = -1;
 const int PatternGenerator::scaleRootChordTrack     = -2;
@@ -771,7 +816,7 @@ double PatternGenerator::getMaximumChordLength() const
         case Mode::bass:
         case Mode::melody:
         default:
-            return 16.0;
+            return 1024.0;
     }
 }
 
@@ -1568,7 +1613,7 @@ void PatternGenerator::generateChordPattern()
             {
                 auto c = bar.getChild (j);
 
-                for (int k = 0; k < 16 / barLen; k++)
+                for (int k = 0; k < getMaximumChordLength() / barLen; k++)
                     notes.getReference (i).add (ChordNote (float (c.getProperty (IDs::start)) + barLen * k,
                                                            c.getProperty (IDs::length),
                                                            c.getProperty (IDs::velocity)));
@@ -1578,7 +1623,7 @@ void PatternGenerator::generateChordPattern()
     else
     {
         notes.add ({});
-        notes.getReference (0).add (ChordNote (0.0f, 16.0f, 127.0f));
+        notes.getReference (0).add (ChordNote (0.0f, float (getMaximumChordLength()), 127.0f));
     }
 
     auto um = mc->getUndoManager();
@@ -1689,9 +1734,9 @@ void PatternGenerator::generateMelodyPattern()
 
     juce::Array<ChordNote> notes;
 
-    for (int i = 0; i < std::ceil (16 / noteLengthBeat) * 4; i++)
+    for (int i = 0; i < std::ceil (getMaximumChordLength() / noteLengthBeat) * 4; i++)
         notes.add (ChordNote (i * noteLengthBeat,
-                              std::min (noteLengthBeat, 16 - i * noteLengthBeat), 127.0f));
+                              std::min (noteLengthBeat, float (getMaximumChordLength()) - i * noteLengthBeat), 127.0f));
 
     int progressionCur = 0; // Current step in the chord progression
 
@@ -1853,7 +1898,7 @@ void PatternGenerator::generateBassPattern()
             {
                 auto c = bar.getChild (j);
 
-                for (int k = 0; k < 16 / barLen; k++)
+                for (int k = 0; k < getMaximumChordLength() / barLen; k++)
                 {
                     notes.getReference (i).add ({ float (c.getProperty (IDs::start)) + barLen * k,
                                                   c.getProperty (IDs::length),
@@ -1867,7 +1912,7 @@ void PatternGenerator::generateBassPattern()
     else
     {
         notes.add ({});
-        notes.getReference (0).add ({ 0.0f, 16.0f, 127.0f, 0, 0 });
+        notes.getReference (0).add ({ 0.0f, float (getMaximumChordLength()), 127.0f, 0, 0 });
     }
 
     auto um = mc->getUndoManager();
@@ -2053,29 +2098,6 @@ void PatternGenerator::refreshPatternIfNeeded()
         autoUpdateManager->triggerAsyncUpdate();
 }
 
-//==============================================================================
-PatternGenerator::AutoUpdateManager::AutoUpdateManager (PatternGenerator& owner_) : owner (owner_)
-{
-    owner.clip.state.addListener (this);
-}
-
-PatternGenerator::AutoUpdateManager::~AutoUpdateManager()
-{
-    owner.clip.state.removeListener (this);
-}
-
-void PatternGenerator::AutoUpdateManager::valueTreePropertyChanged (juce::ValueTree& p, const juce::Identifier& c)
-{
-    if (Clip::isClipState (p))
-        if (c == IDs::start || c == IDs::length || c == IDs::offset)
-            triggerAsyncUpdate();
-}
-
-void PatternGenerator::AutoUpdateManager::handleAsyncUpdate()
-{
-    if (owner.getAutoUpdate())
-        owner.generatePattern();
-}
 
 //==============================================================================
 // Krumhansl-Schmuckler Key-Finding Algorithm.
@@ -2123,11 +2145,14 @@ juce::Array<KeyResult> determineKeyOfNotes (const juce::Array<MidiNote*>& notes)
             s3Minor += (durations[i] - yAve) * (durations[i] - yAve);
         }
 
-        double rMajor = s1Major / std::sqrt (s2Major * s3Major);
-        double rMinor = s1Minor / std::sqrt (s2Minor * s3Minor);
+        if (s2Major * s3Major > 0)
+        {
+            double rMajor = s1Major / std::sqrt (s2Major * s3Major);
+            double rMinor = s1Minor / std::sqrt (s2Minor * s3Minor);
 
-        results.add ({ rMajor, key, Scale::major });
-        results.add ({ rMinor, key, Scale::minor });
+            results.add ({ rMajor, key, Scale::major });
+            results.add ({ rMinor, key, Scale::minor });
+        }
     }
 
     results.sort();

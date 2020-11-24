@@ -150,6 +150,7 @@ struct RetrospectiveRecordBuffer
 
     void syncToEdit (Edit& edit, EditPlaybackContext& context, double streamTime, int numSamplesIn)
     {
+        const juce::SpinLock::ScopedLockType sl (editInfoLock);
         auto& pei = editInfo[edit.getProjectItemID()];
 
         if (context.playhead.isPlaying())
@@ -165,6 +166,7 @@ struct RetrospectiveRecordBuffer
 
     bool wasRecentlyPlaying (Edit& edit)
     {
+        const juce::SpinLock::ScopedLockType sl (editInfoLock);
         auto& pei = editInfo[edit.getProjectItemID()];
 
         return (pei.lastEditTime >= 0 && pei.pausedTime < 20);
@@ -172,6 +174,7 @@ struct RetrospectiveRecordBuffer
 
     void removeEditSync (Edit& edit)
     {
+        const juce::SpinLock::ScopedLockType sl (editInfoLock);
         auto itr = editInfo.find (edit.getProjectItemID());
 
         if (itr != editInfo.end())
@@ -194,6 +197,7 @@ struct RetrospectiveRecordBuffer
     };
 
     std::map<ProjectItemID, PerEditInfo> editInfo;
+    juce::SpinLock editInfoLock;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RetrospectiveRecordBuffer)
 };
@@ -300,7 +304,7 @@ public:
         return Result::ok();
     }
 
-    String prepareToRecord (double playStart, double punchIn, double sr, int /*blockSizeSamples*/, bool isLivePunch) override
+    String prepareToRecord (double playStart, double punchIn, double sr, int blockSizeSamples, bool isLivePunch) override
     {
         CRASH_TRACER
 
@@ -342,8 +346,19 @@ public:
                 rc->firstRecCallback = true;
                 muteTrackNow = false;
 
-                auto adjustSeconds = wi.getAdjustmentSeconds();
+                const auto adjustSeconds = wi.getAdjustmentSeconds();
                 rc->adjustSamples = roundToInt (adjustSeconds * sr);
+
+               #if ENABLE_EXPERIMENTAL_TRACKTION_GRAPH
+                rc->adjustSamples += context.getLatencySamples();
+                
+                // TODO: Still not quite sure why the adjustment needs to be a block less with
+                // the tracktion_graph engine, this may need correcting in the future
+                if (context.getNodePlayHead() != nullptr)
+                    rc->adjustSamples -= blockSizeSamples;
+               #else
+                juce::ignoreUnused (blockSizeSamples);
+               #endif
 
                 if (! isLivePunch)
                 {
@@ -906,11 +921,21 @@ public:
 
             auto clipName = getNewClipName (*dstTrack);
             double start = 0;
-            double recordedLength = AudioFile (dstTrack->edit.engine, recordedFile).getLength();
+            const double recordedLength = AudioFile (dstTrack->edit.engine, recordedFile).getLength();
 
             if (context.playhead.isPlaying() || recordBuffer->wasRecentlyPlaying (edit))
             {
-                auto adjust = -wi.getAdjustmentSeconds() + edit.engine.getDeviceManager().getBlockSizeMs() / 1000.0;
+                const double blockSizeSeconds = edit.engine.getDeviceManager().getBlockSizeMs() / 1000.0;
+                auto adjust = -wi.getAdjustmentSeconds() + blockSizeSeconds;
+                
+               #if ENABLE_EXPERIMENTAL_TRACKTION_GRAPH
+                adjust -= tracktion_graph::sampleToTime (context.getLatencySamples(), edit.engine.getDeviceManager().getSampleRate());
+ 
+                // TODO: Still not quite sure why the adjustment needs to be a block more with
+                // the tracktion_graph engine, this may need correcting in the future
+                if (context.getNodePlayHead() != nullptr)
+                    adjust += blockSizeSeconds;
+               #endif
 
                 if (context.playhead.isPlaying())
                 {

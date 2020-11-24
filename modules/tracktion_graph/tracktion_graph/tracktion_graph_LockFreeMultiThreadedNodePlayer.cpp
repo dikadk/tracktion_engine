@@ -45,7 +45,7 @@ void LockFreeMultiThreadedNodePlayer::setNumThreads (size_t newNumThreads)
 
 void LockFreeMultiThreadedNodePlayer::setNode (std::unique_ptr<Node> newNode)
 {
-    setNode (std::move (newNode), sampleRate, blockSize);
+    setNode (std::move (newNode), getSampleRate(), blockSize);
 }
 
 void LockFreeMultiThreadedNodePlayer::setNode (std::unique_ptr<Node> newNode, double sampleRateToUse, int blockSizeToUse)
@@ -62,6 +62,11 @@ void LockFreeMultiThreadedNodePlayer::prepareToPlay (double sampleRateToUse, int
 
 int LockFreeMultiThreadedNodePlayer::process (const Node::ProcessContext& pc)
 {
+    std::unique_lock<RealTimeSpinLock> tryLock (clearNodesLock, std::try_to_lock);
+    
+    if (! tryLock.owns_lock())
+        return -1;
+
     updatePreparedNode();
 
     if (! preparedNode.rootNode)
@@ -110,13 +115,35 @@ int LockFreeMultiThreadedNodePlayer::process (const Node::ProcessContext& pc)
     return -1;
 }
 
+void LockFreeMultiThreadedNodePlayer::clearNode()
+{
+    std::lock_guard<RealTimeSpinLock> sl (clearNodesLock);
+    
+    // N.B. The threads will be trying to read the preparedNodes so we need to actually stop these first
+    clearThreads();
+    
+    setNode (nullptr);
+    updatePreparedNode();
+
+    // N.B. This needs to be called twice to clear the current and prepared Nodes
+    setNode (nullptr);
+    updatePreparedNode();
+
+    createThreads();
+    
+    assert (pendingPreparedNode == nullptr);
+    assert (preparedNode.rootNode == nullptr);
+    assert (pendingPreparedNodeStorage.rootNode == nullptr);
+    assert (rootNode == nullptr);
+}
+
 //==============================================================================
 //==============================================================================
 std::vector<Node*> LockFreeMultiThreadedNodePlayer::prepareToPlay (Node* node, Node* oldNode, double sampleRateToUse, int blockSizeToUse)
 {
     createThreads();
 
-    sampleRate = sampleRateToUse;
+    sampleRate.store (sampleRateToUse, std::memory_order_release);
     blockSize = blockSizeToUse;
 
     return node_player_utils::prepareToPlay (node, oldNode, sampleRateToUse, blockSizeToUse);

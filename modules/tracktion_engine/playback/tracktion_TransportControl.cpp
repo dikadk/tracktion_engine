@@ -1125,6 +1125,11 @@ bool TransportControl::isUserDragging() const noexcept
     return transportState->userDragging;
 }
 
+bool TransportControl::isPositionUpdatingFromPlayhead() const
+{
+    return transportState->updatingFromPlayHead;
+}
+
 //==============================================================================
 void TransportControl::setLoopIn (double t)
 {
@@ -1519,7 +1524,7 @@ void TransportControl::performStop()
         clearPlayingFlags();
         playHeadWrapper->stop();
         playbackContext->recordingFinished ({ transportState->startTime, recEndTime },
-                                            transportState->discardRecordings);
+                                              transportState->discardRecordings);
 
         position = transportState->discardRecordings ? transportState->startTime
                                                      : (looping ? recEndPos

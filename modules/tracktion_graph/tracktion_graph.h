@@ -59,6 +59,7 @@
 
 #include "utilities/tracktion_AudioFifo.h"
 #include "utilities/tracktion_MidiMessageArray.h"
+#include "utilities/tracktion_RealTimeSpinLock.h"
 #include "utilities/tracktion_Threads.h"
 #include "utilities/tracktion_graph_LatencyProcessor.h"
 
@@ -67,9 +68,13 @@
 #include "tracktion_graph/tracktion_graph_Node.h"
 #include "tracktion_graph/tracktion_graph_PlayHeadState.h"
 
+#include "tracktion_graph/players/tracktion_graph_NodePlayerUtilities.h"
+
 #include "tracktion_graph/tracktion_graph_NodePlayer.h"
 #include "tracktion_graph/tracktion_graph_LockFreeMultiThreadedNodePlayer.h"
 #include "tracktion_graph/tracktion_graph_NodePlayerThreadPools.h"
 
 #include "tracktion_graph/nodes/tracktion_graph_LatencyNode.h"
 #include "tracktion_graph/nodes/tracktion_graph_SummingNode.h"
+
+#include "tracktion_graph/players/tracktion_graph_SimpleNodePlayer.h"

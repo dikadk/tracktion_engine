@@ -475,7 +475,7 @@ public:
     juce::CachedValue<AudioFadeCurve::Type> masterFadeInType, masterFadeOutType;
     juce::CachedValue<bool> midiTimecodeSourceDeviceEnabled, midiTimecodeIgnoringHours, videoMuted,
                             clickTrackEnabled, clickTrackEmphasiseBars, clickTrackRecordingOnly,
-                            recordingPunchInOut, playInStopEnabled, processMutedTracks;
+                            recordingPunchInOut, playInStopEnabled;
     juce::CachedValue<float> clickTrackGain;
     juce::CachedValue<ProjectItemID> videoSource;
 
@@ -493,7 +493,7 @@ public:
 private:
     //==============================================================================
     const int instanceId;
-    ProjectItemID editProjectItemID;
+    std::atomic<ProjectItemID> editProjectItemID { ProjectItemID() };
 
     // persistent properties (i.e. stuff that gets saved)
     juce::CachedValue<juce::String> clickTrackDevice;

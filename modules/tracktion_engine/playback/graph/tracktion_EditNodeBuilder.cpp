@@ -20,9 +20,13 @@ namespace
     {
         juce::Array<PluginType*> plugins;
         
+        // N.B. There is a bit of a hack here checking if the plugin is actually still in the Edit
+        // as they are removed from the PluginCache async and we don't want to flush it every time
+        // we call this method. This should probably be moved to an EditItemCache like Clips and Tracks
         for (auto p : edit.getPluginCache().getPlugins())
             if (auto pt = dynamic_cast<PluginType*> (p))
-                plugins.add (pt);
+                if (pt->state.getParent().isValid())
+                    plugins.add (pt);
         
         return plugins;
     }
@@ -84,6 +88,20 @@ namespace
         return true;
     }
 
+    std::vector<std::pair<int, int>> makeChannelMapRepeatingLastChannel (const juce::AudioChannelSet& source,
+                                                                         const juce::AudioChannelSet& dest)
+    {
+        std::vector<std::pair<int, int>> map;
+        
+        for (int destNum = 0; destNum < dest.size(); ++destNum)
+        {
+            const int sourceNum = std::min (destNum, source.size() - 1);
+            map.push_back ({ sourceNum, destNum });
+        }
+        
+        return map;
+    }
+
     AudioTrack* getTrackContainingTrackDevice (Edit& edit, WaveInputDevice& device)
     {
         for (auto t : getAudioTracks (edit))
@@ -117,6 +135,14 @@ namespace
         for (auto ri : getAllPluginsOfType<RackInstance> (type.edit))
             if (ri->type.get() == &type)
                 instances.add (ri);
+        
+        return instances;
+    }
+
+    juce::Array<RackInstance*> getEnabledInstancesForRack (RackType& type)
+    {
+        auto instances = getInstancesForRack (type);
+        instances.removeIf ([] (auto instance) { return ! instance->isEnabled(); });
         
         return instances;
     }
@@ -204,7 +230,19 @@ std::unique_ptr<tracktion_graph::Node> createNodeForAudioClip (AudioClipBase& cl
         auto& li = clip.getLoopInfo();
 
         if (li.getNumBeats() > 0.0 || li.getRootNote() != -1)
-            return makeNode<TimeStretchingWaveNode> (clip, playHeadState);
+        {
+            auto node = makeNode<TimeStretchingWaveNode> (clip, playHeadState);
+
+            const auto sourceChannels = juce::AudioChannelSet::canonicalChannelSet (clip.getAudioFile().getNumChannels());
+            const auto destChannels = juce::AudioChannelSet::canonicalChannelSet (std::max (2, sourceChannels.size()));
+
+            if (sourceChannels.size() != destChannels.size())
+                node = makeNode<ChannelRemappingNode> (std::move (node),
+                                                       makeChannelMapRepeatingLastChannel (sourceChannels, destChannels),
+                                                       false);
+            
+            return node;
+        }
     }
 
     std::unique_ptr<Node> node;
@@ -754,13 +792,19 @@ std::unique_ptr<tracktion_graph::Node> createNodeForAudioTrack (AudioTrack& at, 
     auto inputTracks = getDirectInputTracks (at);
     const bool muteForInputsWhenRecording = inputTracks.isEmpty();
     const bool processMidiWhenMuted = at.state.getProperty (IDs::processMidiWhenMuted, false);
-    auto trackMuteState = std::make_unique<TrackMuteState> (at, muteForInputsWhenRecording, processMidiWhenMuted);
+    auto clipsMuteState = std::make_unique<TrackMuteState> (at, muteForInputsWhenRecording, processMidiWhenMuted);
+    auto trackMuteState = std::make_unique<TrackMuteState> (at, false, processMidiWhenMuted);
 
     const auto& clips = at.getClips();
-    std::unique_ptr<Node> node = createClipsNode (clips, *trackMuteState, params);
+    std::unique_ptr<Node> node = createClipsNode (clips, *clipsMuteState, params);
     
     if (node)
+    {
+        // When recording, clips should be muted but the plugin should still be audible so use two muting Nodes
+        node = makeNode<TrackMutingNode> (std::move (clipsMuteState), std::move (node));
+        
         node = createTrackCompNode (at, playHeadState, std::move (node));
+    }
     
     auto liveInputNode = createLiveInputsNode (at, playHeadState, params);
     
@@ -957,7 +1001,7 @@ std::vector<std::unique_ptr<Node>> createNodesForRacks (RackTypeList& rackTypeLi
     std::vector<std::unique_ptr<Node>> nodes;
     
     for (auto rackType : rackTypeList.getTypes())
-        if (getInstancesForRack (*rackType).size() > 0)
+        if (getEnabledInstancesForRack (*rackType).size() > 0)
             if (auto rackNode = createNodeForRackType (*rackType, params))
                 nodes.push_back (std::move (rackNode));
     
@@ -1131,6 +1175,21 @@ std::unique_ptr<tracktion_graph::Node> createNodeForEdit (EditPlaybackContext& e
             }
         }
     }
+
+    // Add deviceNodes for any devices only being used by InsertPlugins
+    for (auto ins : insertPlugins)
+    {
+        if (ins->getSendDeviceType() != InsertPlugin::noDevice)
+        {
+            if (auto device = edit.engine.getDeviceManager().findOutputDeviceWithName (ins->outputDevice))
+            {
+                auto& trackNodeVector = deviceNodes[device];
+                juce::ignoreUnused (trackNodeVector);
+                // We don't need to add anything to the vector, just ensure the device is in the map
+            }
+        }
+    }
+
 
     auto outputNode = std::make_unique<tracktion_graph::SummingNode>();
         
