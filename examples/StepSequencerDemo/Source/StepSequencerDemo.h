@@ -29,6 +29,7 @@
 #include "common/Utilities.h"
 #include "common/BinaryData.h"
 #include "common/BinaryData.cpp"
+#include "DrumSampler/DrumSamplerPlugin.h"
 
 //==============================================================================
 namespace
@@ -555,9 +556,9 @@ private:
 
                 for (auto channel : stepClip->getChannels())
                 {
-                    const auto error = sampler->addSound (defaultSampleFiles[channelCount++].getFullPathName(), channel->name.get(), 0.0, 0.0, 1.0f);
-                    sampler->setSoundParams (sampler->getNumSounds() - 1, channel->noteNumber, channel->noteNumber, channel->noteNumber);
-                    jassert (error.isEmpty());
+                    //const auto error = sampler->addSound (defaultSampleFiles[channelCount++].getFullPathName(), channel->name.get(), 0.0, 0.0, 1.0f);
+                    //sampler->setSoundParams (sampler->getNumSounds() - 1, channel->noteNumber, channel->noteNumber, channel->noteNumber);
+                    //jassert (error.isEmpty());
 
                     for (auto& pattern : stepClip->getPatterns())
                         pattern.randomiseChannel (channel->getIndex());

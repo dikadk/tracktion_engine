@@ -1,0 +1,3 @@
+/Applications/tracktion_engine/examples/StepSequencerDemo/Builds/CLion/cmake-build-debug/CMakeFiles/rebuild_cache.dir
+/Applications/tracktion_engine/examples/StepSequencerDemo/Builds/CLion/cmake-build-debug/CMakeFiles/edit_cache.dir
+/Applications/tracktion_engine/examples/StepSequencerDemo/Builds/CLion/cmake-build-debug/CMakeFiles/APP.dir

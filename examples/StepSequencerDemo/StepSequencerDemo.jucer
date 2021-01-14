@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<JUCERPROJECT name="StepSequencerDemo" companyName="Tracktion" version="0.0.1"
+              userNotes="This example shows how to build a step squencer and associated UI."
+              companyWebsite="www.tracktion.com" projectType="guiapp" useAppConfig="0"
+              addUsingNamespaceToJuceHeader="1" id="GAl6g6" displaySplashScreen="1"
+              jucerFormatVersion="1">
+  <MAINGROUP id="P3lsxY" name="StepSequencerDemo">
+    <GROUP id="{534FCB0D-F076-4150-0CC6-ACA570016480}" name="Source">
+      <GROUP id="{13F6383F-11EF-780D-960A-397704B2832E}" name="common">
+        <FILE id="iEyzQ8" name="BinaryData.cpp" compile="1" resource="0" file="Source/common/BinaryData.cpp"/>
+        <FILE id="GSIzhc" name="BinaryData.h" compile="0" resource="0" file="Source/common/BinaryData.h"/>
+        <FILE id="AQLhkG" name="Components.cpp" compile="1" resource="0" file="Source/common/Components.cpp"/>
+        <FILE id="OiG8Sh" name="Components.h" compile="0" resource="0" file="Source/common/Components.h"/>
+        <FILE id="jZgYTj" name="PlaybackDemoAudio.cpp" compile="1" resource="0"
+              file="Source/common/PlaybackDemoAudio.cpp"/>
+        <FILE id="zkN78X" name="PlaybackDemoAudio.h" compile="0" resource="0"
+              file="Source/common/PlaybackDemoAudio.h"/>
+        <FILE id="JS9grd" name="PluginWindow.h" compile="0" resource="0" file="Source/common/PluginWindow.h"/>
+        <FILE id="VOPHxJ" name="tracktion_graph_Dev.h" compile="0" resource="0"
+              file="Source/common/tracktion_graph_Dev.h"/>
+        <FILE id="TBGNEp" name="Utilities.h" compile="0" resource="0" file="Source/common/Utilities.h"/>
+      </GROUP>
+      <GROUP id="{F1560E3B-110D-75EA-3C79-5000B6F36999}" name="DrumSampler">
+        <FILE id="UiBfea" name="DrumSampler.cpp" compile="1" resource="0" file="Source/DrumSampler/DrumSampler.cpp"/>
+        <FILE id="lanrYg" name="DrumSampler.h" compile="0" resource="0" file="Source/DrumSampler/DrumSampler.h"/>
+        <FILE id="IUBUeB" name="DrumSamplerPlugin.cpp" compile="1" resource="0"
+              file="Source/DrumSampler/DrumSamplerPlugin.cpp"/>
+        <FILE id="zATCgu" name="DrumSamplerPlugin.h" compile="0" resource="0"
+              file="Source/DrumSampler/DrumSamplerPlugin.h"/>
+        <FILE id="hvFqub" name="DrumSamplerVoice.cpp" compile="1" resource="0"
+              file="Source/DrumSampler/DrumSamplerVoice.cpp"/>
+        <FILE id="CnxfEh" name="DrumSamplerVoice.h" compile="0" resource="0"
+              file="Source/DrumSampler/DrumSamplerVoice.h"/>
+      </GROUP>
+      <FILE id="YbNLdf" name="Main.cpp" compile="1" resource="0" file="Source/Main.cpp"/>
+      <FILE id="PBcR0b" name="StepSequencerDemo.h" compile="0" resource="0"
+            file="Source/StepSequencerDemo.h"/>
+    </GROUP>
+  </MAINGROUP>
+  <MODULES>
+    <MODULE id="juce_audio_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_devices" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_formats" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_processors" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_utils" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_core" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_data_structures" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_dsp" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_events" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_graphics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_gui_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_gui_extra" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_osc" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="tracktion_engine" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+  </MODULES>
+  <EXPORTFORMATS>
+    <LINUX_MAKE targetFolder="Builds/LinuxMakefile">
+      <CONFIGURATIONS>
+        <CONFIGURATION name="Debug" isDebug="1" optimisation="1" targetName="StepSequencerDemo"/>
+        <CONFIGURATION name="Release" isDebug="0" optimisation="3" targetName="StepSequencerDemo"/>
+      </CONFIGURATIONS>
+      <MODULEPATHS>
+        <MODULEPATH id="juce_audio_basics" path=""/>
+        <MODULEPATH id="juce_audio_devices" path=""/>
+        <MODULEPATH id="juce_audio_formats" path=""/>
+        <MODULEPATH id="juce_audio_processors" path=""/>
+        <MODULEPATH id="juce_audio_utils" path=""/>
+        <MODULEPATH id="juce_core" path=""/>
+        <MODULEPATH id="juce_data_structures" path=""/>
+        <MODULEPATH id="juce_dsp" path=""/>
+        <MODULEPATH id="juce_events" path=""/>
+        <MODULEPATH id="juce_graphics" path=""/>
+        <MODULEPATH id="juce_gui_basics" path=""/>
+        <MODULEPATH id="juce_gui_extra" path=""/>
+        <MODULEPATH id="juce_osc" path=""/>
+        <MODULEPATH id="tracktion_engine" path="../../modules"/>
+      </MODULEPATHS>
+    </LINUX_MAKE>
+    <VS2017 targetFolder="Builds/VisualStudio2017">
+      <CONFIGURATIONS>
+        <CONFIGURATION name="Debug" isDebug="1" optimisation="1" targetName="StepSequencerDemo"/>
+        <CONFIGURATION name="Release" isDebug="0" optimisation="3" targetName="StepSequencerDemo"/>
+      </CONFIGURATIONS>
+      <MODULEPATHS>
+        <MODULEPATH id="juce_audio_basics" path=""/>
+        <MODULEPATH id="juce_audio_devices" path=""/>
+        <MODULEPATH id="juce_audio_formats" path=""/>
+        <MODULEPATH id="juce_audio_processors" path=""/>
+        <MODULEPATH id="juce_audio_utils" path=""/>
+        <MODULEPATH id="juce_core" path=""/>
+        <MODULEPATH id="juce_data_structures" path=""/>
+        <MODULEPATH id="juce_dsp" path=""/>
+        <MODULEPATH id="juce_events" path=""/>
+        <MODULEPATH id="juce_graphics" path=""/>
+        <MODULEPATH id="juce_gui_basics" path=""/>
+        <MODULEPATH id="juce_gui_extra" path=""/>
+        <MODULEPATH id="juce_osc" path=""/>
+        <MODULEPATH id="tracktion_engine" path="../../modules"/>
+      </MODULEPATHS>
+    </VS2017>
+    <XCODE_IPHONE targetFolder="Builds/iOS">
+      <CONFIGURATIONS>
+        <CONFIGURATION name="Debug" isDebug="1" optimisation="1" targetName="StepSequencerDemo"/>
+        <CONFIGURATION name="Release" isDebug="0" optimisation="3" targetName="StepSequencerDemo"/>
+      </CONFIGURATIONS>
+      <MODULEPATHS>
+        <MODULEPATH id="juce_audio_basics" path=""/>
+        <MODULEPATH id="juce_audio_devices" path=""/>
+        <MODULEPATH id="juce_audio_formats" path=""/>
+        <MODULEPATH id="juce_audio_processors" path=""/>
+        <MODULEPATH id="juce_audio_utils" path=""/>
+        <MODULEPATH id="juce_core" path=""/>
+        <MODULEPATH id="juce_data_structures" path=""/>
+        <MODULEPATH id="juce_dsp" path=""/>
+        <MODULEPATH id="juce_events" path=""/>
+        <MODULEPATH id="juce_graphics" path=""/>
+        <MODULEPATH id="juce_gui_basics" path=""/>
+        <MODULEPATH id="juce_gui_extra" path=""/>
+        <MODULEPATH id="juce_osc" path=""/>
+        <MODULEPATH id="tracktion_engine" path="../../modules"/>
+      </MODULEPATHS>
+    </XCODE_IPHONE>
+    <XCODE_MAC targetFolder="Builds/MacOSX">
+      <CONFIGURATIONS>
+        <CONFIGURATION name="Debug" isDebug="1" optimisation="1" targetName="StepSequencerDemo"/>
+        <CONFIGURATION name="Release" isDebug="0" optimisation="3" targetName="StepSequencerDemo"/>
+      </CONFIGURATIONS>
+      <MODULEPATHS>
+        <MODULEPATH id="juce_audio_basics" path=""/>
+        <MODULEPATH id="juce_audio_devices" path=""/>
+        <MODULEPATH id="juce_audio_formats" path=""/>
+        <MODULEPATH id="juce_audio_processors" path=""/>
+        <MODULEPATH id="juce_audio_utils" path=""/>
+        <MODULEPATH id="juce_core" path=""/>
+        <MODULEPATH id="juce_data_structures" path=""/>
+        <MODULEPATH id="juce_dsp" path=""/>
+        <MODULEPATH id="juce_events" path=""/>
+        <MODULEPATH id="juce_graphics" path=""/>
+        <MODULEPATH id="juce_gui_basics" path=""/>
+        <MODULEPATH id="juce_gui_extra" path=""/>
+        <MODULEPATH id="juce_osc" path=""/>
+        <MODULEPATH id="tracktion_engine" path="../../modules"/>
+      </MODULEPATHS>
+    </XCODE_MAC>
+    <CLION targetFolder="Builds/CLion" clionMakefileEnabled="1" clionXcodeEnabled="1">
+      <MODULEPATHS>
+        <MODULEPATH id="juce_osc"/>
+        <MODULEPATH id="juce_gui_extra"/>
+        <MODULEPATH id="juce_gui_basics"/>
+        <MODULEPATH id="juce_graphics"/>
+        <MODULEPATH id="juce_events"/>
+        <MODULEPATH id="juce_dsp"/>
+        <MODULEPATH id="juce_data_structures"/>
+        <MODULEPATH id="juce_core"/>
+        <MODULEPATH id="juce_audio_utils"/>
+        <MODULEPATH id="juce_audio_processors"/>
+        <MODULEPATH id="juce_audio_formats"/>
+        <MODULEPATH id="juce_audio_devices"/>
+        <MODULEPATH id="juce_audio_basics"/>
+        <MODULEPATH id="tracktion_engine" path="../../modules"/>
+      </MODULEPATHS>
+    </CLION>
+  </EXPORTFORMATS>
+  <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1" JUCE_PLUGINHOST_AU="1"/>
+  <LIVE_SETTINGS>
+    <OSX buildEnabled="1"/>
+  </LIVE_SETTINGS>
+</JUCERPROJECT>

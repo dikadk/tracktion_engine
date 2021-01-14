@@ -252,7 +252,7 @@ SelectableClass* SelectableClass::findClassFor (const Selectable& s)
         return result;
    #endif
 
-    jassertfalse;
+    //jassertfalse;
     return {};
 }
 
