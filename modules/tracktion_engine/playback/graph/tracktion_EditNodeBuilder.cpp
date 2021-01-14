@@ -432,8 +432,36 @@ std::unique_ptr<tracktion_graph::Node> createNodeForClips (const juce::Array<Cli
         if (params.allowedClips == nullptr || params.allowedClips->contains (clip))
             return createNodeForClip (*clip, trackMuteState, params);
     }
+    
+    const bool clipsHaveLatency = [&]
+    {
+        if (params.includePlugins)
+            for (auto clip : clips)
+                if (params.allowedClips == nullptr || params.allowedClips->contains (clip))
+                    if (auto pluginList = clip->getPluginList())
+                        for (auto p : *pluginList)
+                            if (p->getLatencySeconds() > 0.0)
+                                return true;
+
+        return false;
+    }();
+    
+    // If any of the clips have latency, it's impossible to use a CombiningNode as it doesn't
+    // continuously process Nodes which means the latency FIFO doesn't get flushed. So just
+    // use a normal SummingNode instead
+    if (clipsHaveLatency)
+    {
+        auto combiner = std::make_unique<SummingNode>();
         
-    auto combiner =  std::make_unique<CombiningNode> (params.processState);
+        for (auto clip : clips)
+            if (params.allowedClips == nullptr || params.allowedClips->contains (clip))
+                if (auto clipNode = createNodeForClip (*clip, trackMuteState, params))
+                    combiner->addInput (std::move (clipNode));
+            
+        return combiner;
+    }
+
+    auto combiner = std::make_unique<CombiningNode> (params.processState);
     
     for (auto clip : clips)
         if (params.allowedClips == nullptr || params.allowedClips->contains (clip))
@@ -496,21 +524,24 @@ std::unique_ptr<tracktion_graph::Node> createARAClipsNode (const juce::Array<Cli
     return std::make_unique<SummingNode> (std::move (nodes));
 }
 
-std::unique_ptr<tracktion_graph::SummingNode> createClipsNode (const juce::Array<Clip*>& clips, const TrackMuteState& trackMuteState,
-                                                               const CreateNodeParams& params)
+std::unique_ptr<tracktion_graph::Node> createClipsNode (const juce::Array<Clip*>& clips, const TrackMuteState& trackMuteState,
+                                                        const CreateNodeParams& params)
 {
-    auto summingNode = std::make_unique<tracktion_graph::SummingNode>();
+    std::vector<std::unique_ptr<Node>> nodes;
 
     if (auto clipsNode = createNodeForClips (clips, trackMuteState, params))
-        summingNode->addInput (std::move (clipsNode));
+        nodes.push_back (std::move (clipsNode));
     
     if (auto araNode = createARAClipsNode (clips, trackMuteState, params.processState.playHeadState, params))
-        summingNode->addInput (std::move (araNode));
+        nodes.push_back (std::move (araNode));
     
-    if (summingNode->getDirectInputNodes().empty())
+    if (nodes.empty())
         return {};
     
-    return summingNode;
+    if (nodes.size() == 1)
+        return std::move (nodes.front());
+    
+    return std::make_unique<SummingNode> (std::move (nodes));
 }
 
 std::unique_ptr<tracktion_graph::Node> createLiveInputNodeForDevice (InputDeviceInstance& inputDeviceInstance, tracktion_graph::PlayHeadState& playHeadState)
@@ -638,23 +669,23 @@ std::unique_ptr<tracktion_graph::Node> createNodeForRackInstance (RackInstance& 
     
     // Send
     // N.B. the channel indicies from the RackInstance start a 1 so we need to subtract this to get a 0-indexed channel
-    std::array<std::tuple<int, int, AutomatableParameter::Ptr>, 2> sendChannelMap;
-    sendChannelMap[0] = std::tuple<int, int, AutomatableParameter::Ptr> (0, rackInstance.leftInputGoesTo - 1, rackInstance.leftInDb);
-    sendChannelMap[1] = std::tuple<int, int, AutomatableParameter::Ptr> (1, rackInstance.rightInputGoesTo - 1, rackInstance.rightInDb);
+    RackInstanceNode::ChannelMap sendChannelMap;
+    sendChannelMap[0] = { 0, rackInstance.leftInputGoesTo - 1, rackInstance.leftInDb };
+    sendChannelMap[1] = { 1, rackInstance.rightInputGoesTo - 1, rackInstance.rightInDb };
     node = makeNode<RackInstanceNode> (std::move (node), std::move (sendChannelMap));
     node = makeNode<SendNode> (std::move (node), rackInputID);
     node = makeNode<ReturnNode> (makeNode<SinkNode> (std::move (node)), rackOutputID);
 
     // Return
-    std::array<std::tuple<int, int, AutomatableParameter::Ptr>, 2> returnChannelMap;
-    returnChannelMap[0] = std::tuple<int, int, AutomatableParameter::Ptr> (rackInstance.leftOutputComesFrom - 1, 0, rackInstance.leftOutDb);
-    returnChannelMap[1] = std::tuple<int, int, AutomatableParameter::Ptr> (rackInstance.rightOutputComesFrom - 1, 1, rackInstance.rightOutDb);
+    RackInstanceNode::ChannelMap returnChannelMap;
+    returnChannelMap[0] = { rackInstance.leftOutputComesFrom - 1, 0, rackInstance.leftOutDb };
+    returnChannelMap[1] = { rackInstance.rightOutputComesFrom - 1, 1, rackInstance.rightOutDb };
     node = makeNode<RackInstanceNode> (std::move (node), std::move (returnChannelMap));
-    auto wetNode = makeNode<GainNode> (std::move (node), [wetGain = rackInstance.wetGain] { return wetGain->getCurrentValue(); });
-    auto dryNode = makeNode<GainNode> (inputNode, [dryGain = rackInstance.dryGain] { return dryGain->getCurrentValue(); });
-    auto sumNode = makeSummingNode ({ wetNode.release(), dryNode.release() });
 
-    return std::move (sumNode);
+    return makeNode<RackReturnNode> (std::move (node),
+                                     [wetGain = rackInstance.wetGain] { return wetGain->getCurrentValue(); },
+                                     inputNode,
+                                     [dryGain = rackInstance.dryGain] { return dryGain->getCurrentValue(); });
 }
 
 std::unique_ptr<tracktion_graph::Node> createPluginNodeForList (PluginList& list, const TrackMuteState* trackMuteState, std::unique_ptr<Node> node,
@@ -989,7 +1020,8 @@ std::unique_ptr<Node> createNodeForRackType (RackType& rackType, const CreateNod
     const auto rackOutputID = getRackOutputBusID (rackType.rackID);
     
     auto rackInputNode = makeNode<ReturnNode> (rackInputID);
-    auto rackNode = RackNodeBuilder::createRackNode (rackType, params.sampleRate, params.blockSize, std::move (rackInputNode),
+    auto rackNode = RackNodeBuilder::createRackNode (RackNodeBuilder::Algorithm::connectedNode,
+                                                     rackType, params.sampleRate, params.blockSize, std::move (rackInputNode),
                                                      params.processState.playHeadState, params.forRendering);
     auto rackOutputNode = makeNode<SendNode> (std::move (rackNode), rackOutputID);
 

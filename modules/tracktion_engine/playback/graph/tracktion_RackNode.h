@@ -18,16 +18,21 @@ namespace tracktion_engine
 struct InputProvider
 {
     InputProvider() = default;
-    InputProvider (int numChannelsToUse) : numChannels (numChannelsToUse) {}
+    InputProvider (choc::buffer::ChannelCount numChannelsToUse)
+        : numChannels (numChannelsToUse)
+    {}
 
     void setInputs (tracktion_graph::Node::AudioAndMidiBuffer newBuffers)
     {
-        audio = numChannels > 0 ? newBuffers.audio.getSubsetChannelBlock (0, (size_t) numChannels) : newBuffers.audio;
+        audio = numChannels > 0 ? newBuffers.audio.getFirstChannels (numChannels)
+                                : newBuffers.audio;
+        tracktion_graph::sanityCheckView (audio);
         midi.copyFrom (newBuffers.midi);
     }
     
     tracktion_graph::Node::AudioAndMidiBuffer getInputs()
     {
+        tracktion_graph::sanityCheckView (audio);
         return { audio, midi };
     }
     
@@ -45,8 +50,8 @@ struct InputProvider
         return *context;
     }
     
-    int numChannels = 0;
-    juce::dsp::AudioBlock<float> audio;
+    choc::buffer::ChannelCount numChannels = 0;
+    choc::buffer::ChannelArrayView<float> audio;
     tracktion_engine::MidiMessageArray midi;
 
     tracktion_engine::PluginRenderContext* context = nullptr;
@@ -138,11 +143,18 @@ private:
 //==============================================================================
 namespace RackNodeBuilder
 {
+    enum class Algorithm
+    {
+        remappingNode, /**< An algorithm using ChannelRemappingNodes. */
+        connectedNode  /**< An algorithm using ConnectedNodes. Should use less Nodes but is less well tested. */
+    };
+
     //==============================================================================
     /** Creates a Node for processing a Rack.
         The InputProvider must be used for providing audio and MIDI input to the Rack.
     */
-    std::unique_ptr<tracktion_graph::Node> createRackNode (tracktion_engine::RackType&,
+    std::unique_ptr<tracktion_graph::Node> createRackNode (Algorithm,
+                                                           tracktion_engine::RackType&,
                                                            double sampleRate, int blockSize,
                                                            std::shared_ptr<InputProvider>,
                                                            tracktion_graph::PlayHeadState* playHeadState = nullptr,
@@ -150,7 +162,8 @@ namespace RackNodeBuilder
 
     //==============================================================================
     /** Creates a Node for processing a Rack where the input comes from a Node. */
-    std::unique_ptr<tracktion_graph::Node> createRackNode (tracktion_engine::RackType&,
+    std::unique_ptr<tracktion_graph::Node> createRackNode (Algorithm,
+                                                           tracktion_engine::RackType&,
                                                            double sampleRate, int blockSize,
                                                            std::unique_ptr<tracktion_graph::Node>,
                                                            tracktion_graph::PlayHeadState&, bool isRendering);

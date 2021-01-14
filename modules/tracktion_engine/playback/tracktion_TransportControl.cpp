@@ -585,7 +585,7 @@ struct TransportControl::PlayHeadWrapper
     {
        #if ENABLE_EXPERIMENTAL_TRACKTION_GRAPH
         if (auto ph = getNodePlayHead())
-            ph->setPosition (timeToSample (newPos, getSampleRate()));
+            transport.playbackContext->postPosition (newPos);
        #endif
 
         if (auto ph = getPlayHead())
@@ -710,15 +710,17 @@ void TransportControl::stopAllTransports (Engine& engine, bool discardRecordings
         tc->stop (discardRecordings, clearDevices);
 }
 
-void TransportControl::restartAllTransports (Engine& engine, bool clearDevices)
+std::vector<std::unique_ptr<TransportControl::ScopedContextAllocator>> TransportControl::restartAllTransports (Engine& engine, bool clearDevices)
 {
+    std::vector<std::unique_ptr<ScopedContextAllocator>> restartHandles;
+    
     for (auto tc : getAllActiveTransports (engine))
     {
         std::unique_ptr<ScopedPlaybackRestarter> spr;
 
         if (clearDevices)
         {
-            spr = std::make_unique<ScopedPlaybackRestarter> (*tc);
+            restartHandles.push_back (std::make_unique<ScopedContextAllocator> (*tc));
             tc->stop (false, true);
             tc->freePlaybackContext();
         }
@@ -729,6 +731,8 @@ void TransportControl::restartAllTransports (Engine& engine, bool clearDevices)
 
         tc->edit.restartPlayback();
     }
+    
+    return restartHandles;
 }
 
 TransportControl::PlayingFlag::PlayingFlag (Engine& e) noexcept : engine (e)    { ++engine.getActiveEdits().numTransportsPlaying; }
@@ -830,6 +834,9 @@ struct TransportControl::ScreenSaverDefeater
 {
     ScreenSaverDefeater()
     {
+        if (Desktop::getInstance().isHeadless())
+            return;
+
         TRACKTION_ASSERT_MESSAGE_THREAD
         ++numScreenSaverDefeaters;
         Desktop::setScreenSaverEnabled (numScreenSaverDefeaters == 0);
@@ -837,6 +844,9 @@ struct TransportControl::ScreenSaverDefeater
 
     ~ScreenSaverDefeater()
     {
+        if (Desktop::getInstance().isHeadless())
+            return;
+
         TRACKTION_ASSERT_MESSAGE_THREAD
         --numScreenSaverDefeaters;
         jassert (numScreenSaverDefeaters >= 0);
@@ -971,9 +981,10 @@ void TransportControl::syncToEdit (Edit* editToSyncTo, bool isPreview)
     }
 }
 
-bool TransportControl::isPlaying() const              { return transportState->playing; }
-bool TransportControl::isRecording() const            { return transportState->recording; }
-bool TransportControl::isSafeRecording() const        { return isRecording() && transportState->safeRecording; }
+bool TransportControl::isPlaying() const                { return transportState->playing; }
+bool TransportControl::isRecording() const              { return transportState->recording; }
+bool TransportControl::isSafeRecording() const          { return isRecording() && transportState->safeRecording; }
+bool TransportControl::isStopping() const               { return isStopInProgress; }
 
 double TransportControl::getTimeWhenStarted() const   { return transportState->startTime; }
 
@@ -1324,8 +1335,7 @@ void TransportControl::performPlay()
         transportState->safeRecording = false;
         playingFlag = std::make_unique<PlayingFlag> (engine);
 
-        if (transportState->cursorPosAtPlayStart < -100.0)
-            transportState->cursorPosAtPlayStart = position.get();
+        transportState->cursorPosAtPlayStart = position.get();
 
         ensureContextAllocated();
 
@@ -1498,6 +1508,7 @@ void TransportControl::performStop()
 {
     CRASH_TRACER
 
+    const ScopedValueSetter<bool> svs (isStopInProgress, true);
     screenSaverDefeater.reset();
     sectionPlayer.reset();
 
@@ -1578,9 +1589,6 @@ void TransportControl::performPositionChange()
 
     if (playbackContext != nullptr && isPlaying())
         playHeadWrapper->setPosition (newPos);
-
-    if (! isPlaying())
-        transportState->cursorPosAtPlayStart = newPos;
 
     position = newPos;
 

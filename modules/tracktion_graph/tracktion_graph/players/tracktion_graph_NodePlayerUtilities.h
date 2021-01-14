@@ -16,6 +16,22 @@ namespace tracktion_graph
 
 namespace node_player_utils
 {
+    /** Returns true if all the nodes in the graph have a unique nodeID. */
+    static inline bool areNodeIDsUnique (Node& node, bool ignoreZeroIDs)
+    {
+        std::vector<size_t> nodeIDs;
+        visitNodes (node, [&] (Node& n) { nodeIDs.push_back (n.getNodeProperties().nodeID); }, false);
+        std::sort (nodeIDs.begin(), nodeIDs.end());
+
+        if (ignoreZeroIDs)
+            nodeIDs.erase (std::remove_if (nodeIDs.begin(), nodeIDs.end(),
+                                           [] (auto nID) { return nID == 0; }),
+                           nodeIDs.end());
+
+        auto uniqueEnd = std::unique (nodeIDs.begin(), nodeIDs.end());
+        return uniqueEnd == nodeIDs.end();
+    }
+
     /** Prepares a specific Node to be played and returns all the Nodes. */
     static std::vector<Node*> prepareToPlay (Node* node, Node* oldNode, double sampleRate, int blockSize)
     {

@@ -109,6 +109,27 @@ struct NodeProperties
 
 //==============================================================================
 //==============================================================================
+enum class ClearBuffers
+{
+    no, /**< Don't clear buffers before passing them to process, your subclass will take care of that. */
+    yes /**< Do clear buffers before passing to process so your subclass can simply add in to them. */
+};
+
+enum class AllocateAudioBuffer
+{
+    no, /**< Don't allocate an audio buffer, your subclass will ignore the dest buffer passed to process and simply use setAudioOutput to pass the buffer along. */
+    yes /**< Do allocate an audio buffer so your subclass use the dest buffer passed to process. */
+};
+
+/** Holds some hints that _might_ be used by the Node or players to improve efficiency. */
+struct NodeOptimisations
+{
+    ClearBuffers clear = ClearBuffers::yes;
+    AllocateAudioBuffer allocate = AllocateAudioBuffer::yes;
+};
+
+//==============================================================================
+//==============================================================================
 /**
     Main graph Node processor class.
     Nodes are combined together to form a graph with a root Node which can then
@@ -147,7 +168,7 @@ public:
     /** Contains the buffers for a processing operation. */
     struct AudioAndMidiBuffer
     {
-        juce::dsp::AudioBlock<float> audio;
+        choc::buffer::ChannelArrayView<float> audio;
         tracktion_engine::MidiMessageArray& midi;
     };
 
@@ -187,6 +208,7 @@ public:
     //==============================================================================
     /** @internal */
     void* internal = nullptr;
+    virtual size_t getAllocatedBytes() const;
 
 protected:
     /** Called once before playback begins for each node.
@@ -205,13 +227,28 @@ protected:
     /** Called when the node is to be processed.
         This should add in to the buffers available making sure not to change their size at all.
     */
-    virtual void process (const ProcessContext&) = 0;
+    virtual void process (ProcessContext&) = 0;
 
+    //==============================================================================
+    /** This can be called to provide some hints about allocating or playing back a Node to improve efficiency.
+        Be careful with these as they change the default and often expected behaviour.
+    */
+    void setOptimisations (NodeOptimisations);
+    
+    /** This can be called during your process function to set a view to the output.
+        This is useful to avoid having to allocate an internal buffer and always fill it if you're
+        just passing on data.
+    */
+    void setAudioOutput (const choc::buffer::ChannelArrayView<float>&);
+    
 private:
     std::atomic<bool> hasBeenProcessed { false };
-    juce::AudioBuffer<float> audioBuffer;
+    choc::buffer::Size audioBufferSize;
+    choc::buffer::ChannelArrayBuffer<float> audioBuffer;
+    choc::buffer::ChannelArrayView<float> audioView;
     tracktion_engine::MidiMessageArray midiBuffer;
     std::atomic<int> numSamplesProcessed { 0 };
+    NodeOptimisations nodeOptimisations;
 
    #if JUCE_DEBUG
     std::atomic<bool> isBeingProcessed { false };
@@ -278,7 +315,11 @@ inline void Node::initialise (const PlaybackInitialisationInfo& info)
     prepareToPlay (info);
     
     auto props = getNodeProperties();
-    audioBuffer.setSize (props.numberOfChannels, info.blockSize);
+    audioBufferSize = choc::buffer::Size::create ((choc::buffer::ChannelCount) props.numberOfChannels,
+                                                  (choc::buffer::FrameCount) info.blockSize);
+    
+    if (nodeOptimisations.allocate == AllocateAudioBuffer::yes)
+        audioBuffer.resize (audioBufferSize);
 }
 
 inline void Node::prepareForNextBlock (juce::Range<int64_t> referenceSampleRange)
@@ -294,28 +335,35 @@ inline void Node::process (juce::Range<int64_t> referenceSampleRange)
     isBeingProcessed = true;
    #endif
 
-    audioBuffer.clear();
-    midiBuffer.clear();
-    const int numChannelsBeforeProcessing = audioBuffer.getNumChannels();
-    const int numSamplesBeforeProcessing = audioBuffer.getNumSamples();
+    if (nodeOptimisations.clear == ClearBuffers::yes)
+    {
+        audioBuffer.clear();
+        midiBuffer.clear();
+    }
+    
+    const auto numChannelsBeforeProcessing = audioBuffer.getNumChannels();
+    const auto numSamplesBeforeProcessing = audioBuffer.getNumFrames();
     juce::ignoreUnused (numChannelsBeforeProcessing, numSamplesBeforeProcessing);
 
-    const int numSamples = (int) referenceSampleRange.getLength();
+    auto numSamples = (int) referenceSampleRange.getLength();
     jassert (numSamples > 0); // This must be a valid number of samples to process
-    jassert (numChannelsBeforeProcessing == 0 || numSamples <= audioBuffer.getNumSamples());
+    jassert (numChannelsBeforeProcessing == 0 || numSamples <= (int) audioBuffer.getNumFrames());
 
-    auto inputBlock = numChannelsBeforeProcessing > 0 ? juce::dsp::AudioBlock<float> (audioBuffer).getSubBlock (0, (size_t) numSamples)
-                                                      : juce::dsp::AudioBlock<float>();
-    ProcessContext pc {
-                        referenceSampleRange,
-                        { inputBlock , midiBuffer }
-                      };
+    audioView = ((nodeOptimisations.allocate == AllocateAudioBuffer::yes ? audioBuffer.getView()
+                                                                         : choc::buffer::ChannelArrayView<float> { {}, audioBufferSize }))
+                    .getStart ((choc::buffer::FrameCount) numSamples);
+
+    auto destAudioView = audioView;
+    ProcessContext pc { referenceSampleRange, { destAudioView, midiBuffer } };
     process (pc);
-    numSamplesProcessed.store (numSamples, std::memory_order_release);
+    numSamplesProcessed.store ((int) numSamples, std::memory_order_release);
     hasBeenProcessed.store (true, std::memory_order_release);
     
     jassert (numChannelsBeforeProcessing == audioBuffer.getNumChannels());
-    jassert (numSamplesBeforeProcessing == audioBuffer.getNumSamples());
+    jassert (numSamplesBeforeProcessing == audioBuffer.getNumFrames());
+
+    // If you've set a new view with setAudioOutput, they must be the same size!
+    jassert (destAudioView.getSize() == audioView.getSize());
 
    #if JUCE_DEBUG
     isBeingProcessed = false;
@@ -330,9 +378,25 @@ inline bool Node::hasProcessed() const
 inline Node::AudioAndMidiBuffer Node::getProcessedOutput()
 {
     jassert (hasProcessed());
-    return { juce::dsp::AudioBlock<float> (audioBuffer).getSubBlock (0, (size_t) numSamplesProcessed.load (std::memory_order_acquire)), midiBuffer };
+    return { audioView.getStart ((choc::buffer::FrameCount) numSamplesProcessed.load (std::memory_order_acquire)),
+             midiBuffer };
 }
 
+inline size_t Node::getAllocatedBytes() const
+{
+    return audioBuffer.getView().data.getBytesNeeded (audioBuffer.getSize())
+        + (size_t (midiBuffer.size()) * sizeof (tracktion_engine::MidiMessageArray::MidiMessageWithSource));
+}
+
+inline void Node::setOptimisations (NodeOptimisations newOptimisations)
+{
+    nodeOptimisations = newOptimisations;
+}
+
+inline void Node::setAudioOutput (const choc::buffer::ChannelArrayView<float>& newAudioView)
+{
+    audioView = newAudioView;
+}
 
 //==============================================================================
 //==============================================================================
@@ -432,6 +496,5 @@ inline std::vector<Node*> getNodes (Node& node, VertexOrdering vertexOrdering)
     
     return visitedNodes;
 }
-
 
 }

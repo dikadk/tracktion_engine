@@ -18,9 +18,9 @@ class PlayHeadPositionNode final    : public tracktion_graph::Node,
                                       public TracktionEngineNode
 {
 public:
-    PlayHeadPositionNode (ProcessState& processState, std::unique_ptr<tracktion_graph::Node> inputNode,
+    PlayHeadPositionNode (ProcessState& processStateToUse, std::unique_ptr<tracktion_graph::Node> inputNode,
                           std::atomic<double>& playHeadTimeToUpdate)
-        : TracktionEngineNode (processState),
+        : TracktionEngineNode (processStateToUse),
           input (std::move (inputNode)),
           playHeadTime (playHeadTimeToUpdate)
     {
@@ -50,14 +50,14 @@ public:
         updateFromPreviousNode (info.rootNodeToReplace);
     }
     
-    void process (const ProcessContext& pc) override
+    void process (ProcessContext& pc) override
     {
         // Copy the input buffers to the outputs
         auto sourceBuffers = input->getProcessedOutput();
         jassert (sourceBuffers.audio.getNumChannels() == pc.buffers.audio.getNumChannels());
 
         pc.buffers.midi.copyFrom (sourceBuffers.midi);
-        pc.buffers.audio.copyFrom (sourceBuffers.audio);
+        copy (pc.buffers.audio, sourceBuffers.audio);
         
         updatePlayHeadTime (pc.referenceSampleRange.getLength());
     }
@@ -72,7 +72,6 @@ private:
     struct State
     {
         int64_t numLatencySamplesToCountDown = 0;
-        int64_t lastReferenceSamplePosition = 0;
         int64_t referencePositionOnJump = 0;
     };
     
@@ -85,13 +84,9 @@ private:
         if (getPlayHeadState().didPlayheadJump() || updateReferencePositionOnJump)
         {
             state->numLatencySamplesToCountDown = latencyNumSamples;
-            state->referencePositionOnJump = updateReferencePositionOnJump ? referenceSamplePosition - numSamples
-                                                                           : state->lastReferenceSamplePosition;
-            // TODO: Need to determine why the last position is the "correct" visual position
+            state->referencePositionOnJump = referenceSamplePosition;
         }
         
-        state->lastReferenceSamplePosition = referenceSamplePosition;
-
         if (state->numLatencySamplesToCountDown > 0)
         {
             const int64_t numSamplesToDecrement = std::min (state->numLatencySamplesToCountDown, numSamples);

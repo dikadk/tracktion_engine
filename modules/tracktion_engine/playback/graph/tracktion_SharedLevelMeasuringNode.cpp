@@ -16,6 +16,9 @@ SharedLevelMeasuringNode::SharedLevelMeasuringNode (SharedLevelMeasurer::Ptr sou
     : levelMeasurer (std::move (source)), input (std::move (inputNode))
 {
     jassert (levelMeasurer != nullptr);
+
+    setOptimisations ({ tracktion_graph::ClearBuffers::no,
+                        tracktion_graph::AllocateAudioBuffer::no });
 }
 
 std::vector<tracktion_graph::Node*> SharedLevelMeasuringNode::getDirectInputNodes()
@@ -44,18 +47,18 @@ void SharedLevelMeasuringNode::prefetchBlock (juce::Range<int64_t> referenceSamp
     levelMeasurer->startNextBlock (tracktion_graph::sampleToTime (referenceSampleRange.getStart(), sampleRate));
 }
 
-void SharedLevelMeasuringNode::process (const ProcessContext& pc)
+void SharedLevelMeasuringNode::process (ProcessContext& pc)
 {
     SCOPED_REALTIME_CHECK
 
     // Pass on input to output
     auto sourceBuffers = input->getProcessedOutput();
 
-    pc.buffers.audio.copyFrom (sourceBuffers.audio);
+    setAudioOutput (sourceBuffers.audio);
     pc.buffers.midi.copyFrom (sourceBuffers.midi);
 
     // And pass audio to level measurer
-    auto buffer = tracktion_graph::test_utilities::createAudioBuffer (sourceBuffers.audio);
+    auto buffer = tracktion_graph::toAudioBuffer (sourceBuffers.audio);
     levelMeasurer->addBuffer (buffer, 0, buffer.getNumSamples());
 }
 

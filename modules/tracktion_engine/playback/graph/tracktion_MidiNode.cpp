@@ -16,10 +16,10 @@ MidiNode::MidiNode (juce::MidiMessageSequence sequence,
                     bool useMPE,
                     EditTimeRange editTimeRange,
                     LiveClipLevel liveClipLevel,
-                    ProcessState& processState,
+                    ProcessState& processStateToUse,
                     EditItemID editItemIDToUse,
                     std::function<bool()> shouldBeMuted)
-    : TracktionEngineNode (processState),
+    : TracktionEngineNode (processStateToUse),
       channelNumbers (midiChannelNumbers),
       useMPEChannelMode (useMPE),
       editSection (editTimeRange),
@@ -42,10 +42,10 @@ MidiNode::MidiNode (std::vector<juce::MidiMessageSequence> sequences,
                     bool useMPE,
                     EditTimeRange editTimeRange,
                     LiveClipLevel liveClipLevel,
-                    ProcessState& processState,
+                    ProcessState& processStateToUse,
                     EditItemID editItemIDToUse,
                     std::function<bool()> shouldBeMuted)
-    : TracktionEngineNode (processState),
+    : TracktionEngineNode (processStateToUse),
       ms (std::move (sequences)),
       channelNumbers (midiChannelNumbers),
       useMPEChannelMode (useMPE),
@@ -101,13 +101,13 @@ bool MidiNode::isReadyToProcess()
     return true;
 }
 
-void MidiNode::process (const ProcessContext& pc)
+void MidiNode::process (ProcessContext& pc)
 {
     SCOPED_REALTIME_CHECK
     processSection (pc, getTimelineSampleRange());
 }
 
-void MidiNode::processSection (const ProcessContext& pc, juce::Range<int64_t> timelineRange)
+void MidiNode::processSection (ProcessContext& pc, juce::Range<int64_t> timelineRange)
 {
     if (timelineRange.isEmpty())
         return;
@@ -193,8 +193,10 @@ void MidiNode::processSection (const ProcessContext& pc, juce::Range<int64_t> ti
         }
     }
 
+    // N.B. if the note-off is added on the last time it may not be sent to the plugin which can break the active note-state.
+    // To avoid this, make sure any added messages are nudged back by 0.00001s
     if (getPlayHeadState().isLastBlockOfLoop())
-        createNoteOffs (pc.buffers.midi, ms[currentSequence], localTime.getEnd(), localTime.getLength(), getPlayHead().isPlaying());
+        createNoteOffs (pc.buffers.midi, ms[currentSequence], localTime.getEnd(), localTime.getLength() - 0.00001, getPlayHead().isPlaying());
 }
 
 void MidiNode::createMessagesForTime (double time, MidiMessageArray& buffer)
@@ -268,7 +270,7 @@ void MidiNode::createNoteOffs (MidiMessageArray& destination, const juce::MidiMe
 
                 if (meh->message.getTimeStamp() < time
                      && meh->noteOffObject != nullptr
-                     && meh->noteOffObject->message.getTimeStamp() > time)
+                     && meh->noteOffObject->message.getTimeStamp() >= time)
                     destination.addMidiMessage (meh->noteOffObject->message, midiTimeOffset, midiSourceID);
             }
         }

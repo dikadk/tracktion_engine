@@ -47,7 +47,7 @@ bool ClickNode::isReadyToProcess()
     return true;
 }
 
-void ClickNode::process (const ProcessContext& pc)
+void ClickNode::process (ProcessContext& pc)
 {
     SCOPED_REALTIME_CHECK
 

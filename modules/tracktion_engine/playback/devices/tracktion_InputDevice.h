@@ -226,7 +226,10 @@ public:
                 case InputDevice::waveDevice:           return new WaveInputDeviceDestination (input, v);
                 case InputDevice::physicalMidiDevice:   return new MidiInputDeviceDestination (input, v);
                 case InputDevice::virtualMidiDevice:    return new VirtualMidiInputDeviceDestination (input, v);
-                default:                                return new InputDeviceDestination (input, v);
+                case InputDevice::trackWaveDevice:
+                case InputDevice::trackMidiDevice:
+                default:
+                    return new InputDeviceDestination (input, v);
             }
         }
 
@@ -256,7 +259,7 @@ public:
         virtual ~Consumer() = default;
 
         /** Override this to receive audio input from the device if it has any. */
-        virtual void acceptInputBuffer (const juce::dsp::AudioBlock<float>&) {}
+        virtual void acceptInputBuffer (choc::buffer::ChannelArrayView<float>) {}
 
         /** Override this to receive MIDI input from the device if it has any. */
         virtual void handleIncomingMidiMessage (const juce::MidiMessage&) {}

@@ -46,6 +46,12 @@ namespace tracktion_engine
          return latencySamples;
      }
      
+     void postPosition (double newPosition)
+     {
+         pendingPosition.store (newPosition, std::memory_order_release);
+         positionUpdatePending = true;
+     }
+     
      void setSpeedCompensation (double plusOrMinus)
      {
          speedCompensation = jlimit (-10.0, 10.0, plusOrMinus);
@@ -62,6 +68,9 @@ namespace tracktion_engine
      
      void process (float** allChannels, int numChannels, int destNumSamples)
      {
+         if (positionUpdatePending.exchange (false))
+             playHead.setPosition (timeToSample (pendingPosition.load (std::memory_order_acquire), getSampleRate()));
+         
          const auto numSamples = referenceSampleRange.getLength();
          scratchMidiBuffer.clear();
 
@@ -75,8 +84,7 @@ namespace tracktion_engine
              scratchAudioBuffer.setSize (numChannels, (int) numSamples, false, false, true);
              scratchAudioBuffer.clear();
              
-             juce::dsp::AudioBlock<float> audioBlock (scratchAudioBuffer);
-             tracktion_graph::Node::ProcessContext pc { referenceSampleRange, { audioBlock, scratchMidiBuffer } };
+             tracktion_graph::Node::ProcessContext pc { referenceSampleRange, { tracktion_graph::toBufferView (scratchAudioBuffer), scratchMidiBuffer } };
              player.process (pc);
              
              // Then resample them to the dest num samples
@@ -92,8 +100,10 @@ namespace tracktion_engine
          }
          else
          {
-             juce::dsp::AudioBlock<float> audioBlock (allChannels, (size_t) numChannels, (size_t) numSamples);
-             tracktion_graph::Node::ProcessContext pc { referenceSampleRange, { audioBlock, scratchMidiBuffer } };
+             auto audioView = choc::buffer::createChannelArrayView (allChannels,
+                                                                    (choc::buffer::ChannelCount) numChannels,
+                                                                    (choc::buffer::FrameCount) numSamples);
+             tracktion_graph::Node::ProcessContext pc { referenceSampleRange, { audioView, scratchMidiBuffer } };
              player.process (pc);
          }
      }
@@ -115,6 +125,8 @@ namespace tracktion_engine
      
      int latencySamples = 0;
      juce::Range<int64_t> referenceSampleRange;
+     std::atomic<double> pendingPosition { 0.0 };
+     std::atomic<bool> positionUpdatePending { false };
      double speedCompensation = 0.0;
      std::vector<std::unique_ptr<juce::LagrangeInterpolator>> interpolators;
      bool isUsingInterpolator = false;
@@ -715,7 +727,7 @@ static SelectionManager* findAppropriateSelectionManager (Edit& ed)
 
     for (SelectionManager::Iterator iter; iter.next();)
         if (auto sm = iter.get())
-            if (sm->edit == &ed)
+            if (sm->getEdit() == &ed)
                 if (found == nullptr || found->editViewID == -1)
                     found = sm;
 
@@ -1092,6 +1104,12 @@ void EditPlaybackContext::setSpeedCompensation (double plusOrMinus)
 {
     if (nodePlaybackContext)
         nodePlaybackContext->setSpeedCompensation (plusOrMinus);
+}
+
+void EditPlaybackContext::postPosition (double newPosition)
+{
+    if (nodePlaybackContext)
+        nodePlaybackContext->postPosition (newPosition);
 }
 
 void EditPlaybackContext::setThreadPoolStrategy (int type)

@@ -427,9 +427,9 @@ Plugin::Plugin (PluginCreationInfo info)
 
         MessageManager::callAsync ([=, &e]() mutable
         {
-            if (ref != nullptr)
+            if (auto plugin = dynamic_cast<Plugin*> (ref.get()))
                 if (auto na = e.getExternalControllerManager().getAutomap())
-                    na->pluginChanged (ref);
+                    na->pluginChanged (plugin);
         });
     }
    #endif
@@ -943,6 +943,17 @@ AutomatableParameter::Ptr Plugin::getQuickControlParameter() const
                 {
                     if (rf->type != nullptr)
                     {
+                        // First check macros
+                        for (auto param : rf->type->macroParameterList.getAutomatableParameters())
+                        {
+                            if (param->paramID == currentID)
+                            {
+                                quickControlParameter = param;
+                                break;
+                            }
+                        }
+
+                        // Then plugins
                         for (auto p : rf->type->getPlugins())
                         {
                             for (int j = 0; j < p->getNumAutomatableParameters(); j++)

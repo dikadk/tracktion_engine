@@ -24,6 +24,12 @@ public:
         ownedInput = std::move (inputNode);
     }
 
+    LatencyNode (std::shared_ptr<Node> inputNode, int numSamplesToDelay)
+        : LatencyNode (inputNode.get(), numSamplesToDelay)
+    {
+        sharedInput = std::move (inputNode);
+    }
+
     LatencyNode (Node* inputNode, int numSamplesToDelay)
         : input (inputNode)
     {
@@ -59,24 +65,24 @@ public:
         replaceLatencyProcessorIfPossible (info.rootNodeToReplace);
     }
     
-    void process (const ProcessContext& pc) override
+    void process (ProcessContext& pc) override
     {
-        auto outputBlock = pc.buffers.audio;
         auto inputBuffer = input->getProcessedOutput().audio;
         auto& inputMidi = input->getProcessedOutput().midi;
-        const int numSamples = (int) pc.referenceSampleRange.getLength();
-        jassert (outputBlock.getNumChannels() == 0 || numSamples == (int) outputBlock.getNumSamples());
+        auto numSamples = (int) pc.referenceSampleRange.getLength();
+        jassert (pc.buffers.audio.getNumChannels() == 0 || numSamples == (int) pc.buffers.audio.getNumFrames());
 
         latencyProcessor->writeAudio (inputBuffer);
         latencyProcessor->writeMIDI (inputMidi);
         
-        latencyProcessor->readAudio (outputBlock);
+        latencyProcessor->readAudio (pc.buffers.audio);
         latencyProcessor->readMIDI (pc.buffers.midi, numSamples);
     }
     
 private:
     std::unique_ptr<Node> ownedInput;
-    Node* input;
+    std::shared_ptr<Node> sharedInput;
+    Node* input = nullptr;
     std::shared_ptr<LatencyProcessor> latencyProcessor { std::make_shared<LatencyProcessor>() };
     
     void replaceLatencyProcessorIfPossible (Node* rootNodeToReplace)

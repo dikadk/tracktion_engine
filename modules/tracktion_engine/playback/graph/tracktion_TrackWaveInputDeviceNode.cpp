@@ -16,6 +16,10 @@ TrackWaveInputDeviceNode::TrackWaveInputDeviceNode (WaveInputDevice& owner, std:
     : waveInputDevice (owner), input (std::move (inputNode)), copyInputsToOutputs (owner.isEndToEndEnabled())
 {
     jassert (waveInputDevice.isTrackDevice());
+
+    if (copyInputsToOutputs)
+        setOptimisations ({ tracktion_graph::ClearBuffers::no,
+                            tracktion_graph::AllocateAudioBuffer::no });
 }
 
 std::vector<tracktion_graph::Node*> TrackWaveInputDeviceNode::getDirectInputNodes()
@@ -39,7 +43,7 @@ bool TrackWaveInputDeviceNode::isReadyToProcess()
     return input->hasProcessed();
 }
 
-void TrackWaveInputDeviceNode::process (const ProcessContext& pc)
+void TrackWaveInputDeviceNode::process (ProcessContext& pc)
 {
     SCOPED_REALTIME_CHECK
 
@@ -48,21 +52,22 @@ void TrackWaveInputDeviceNode::process (const ProcessContext& pc)
 
     if (copyInputsToOutputs)
     {
-        pc.buffers.audio.copyFrom (sourceBuffers.audio);
+        setAudioOutput (sourceBuffers.audio);
         pc.buffers.midi.copyFrom (sourceBuffers.midi);
     }
 
     // And pass audio to device
-    const int numChans = juce::jmin (2, (int) sourceBuffers.audio.getNumChannels());
-
-    if (numChans > 0)
+    if (auto numChans = juce::jmin (2u, sourceBuffers.audio.getNumChannels()))
     {
-        const float* chans[3] = { sourceBuffers.audio.getChannelPointer (0),
-                                  numChans > 1 ? sourceBuffers.audio.getChannelPointer (1) : nullptr,
+        const float* chans[3] = { sourceBuffers.audio.getChannel(0).data.data,
+                                  numChans > 1 ? sourceBuffers.audio.getChannel(1).data.data
+                                               : nullptr,
                                   nullptr };
+
         const double streamTime = waveInputDevice.engine.getDeviceManager().getCurrentStreamTime()
                                     + tracktion_graph::sampleToTime (offsetSamples, sampleRate);
-        waveInputDevice.consumeNextAudioBlock (chans, numChans, (int) sourceBuffers.audio.getNumSamples(), streamTime);
+
+        waveInputDevice.consumeNextAudioBlock (chans, (int) numChans, (int) sourceBuffers.audio.getNumFrames(), streamTime);
     }
 }
 
