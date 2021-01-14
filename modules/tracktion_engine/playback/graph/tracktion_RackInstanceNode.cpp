@@ -12,8 +12,7 @@
 namespace tracktion_engine
 {
 
-RackInstanceNode::RackInstanceNode (std::unique_ptr<Node> inputNode,
-                                    std::array<std::tuple<int, int, AutomatableParameter::Ptr>, 2>  channelMapToUse)
+RackInstanceNode::RackInstanceNode (std::unique_ptr<Node> inputNode, ChannelMap channelMapToUse)
     : input (std::move (inputNode)), channelMap (std::move (channelMapToUse))
 {
     assert (input);
@@ -22,7 +21,7 @@ RackInstanceNode::RackInstanceNode (std::unique_ptr<Node> inputNode,
     {
 		assert (std::get<2> (chan) != nullptr);
         maxNumChannels = std::max (maxNumChannels,
-                                   std::max (std::get<0> (chan), std::get<1> (chan)) + 1);
+                                   std::get<1> (chan) + 1);
     }
     
     for (size_t chan = 0; chan < 2; ++chan)
@@ -38,7 +37,7 @@ std::vector<tracktion_graph::Node*> RackInstanceNode::getDirectInputNodes()
 tracktion_graph::NodeProperties RackInstanceNode::getNodeProperties()
 {
     auto props = input->getNodeProperties();
-    props.numberOfChannels = maxNumChannels;
+    props.numberOfChannels = (int) maxNumChannels;
     props.hasMidi = true;
     props.hasAudio = true;
     
@@ -54,9 +53,9 @@ bool RackInstanceNode::isReadyToProcess()
     return input->hasProcessed();
 }
 
-void RackInstanceNode::process (const ProcessContext& pc)
+void RackInstanceNode::process (ProcessContext& pc)
 {
-    assert (pc.buffers.audio.getNumChannels() == (size_t) maxNumChannels);
+    assert ((int) pc.buffers.audio.getNumChannels() == maxNumChannels);
     auto inputBuffers = input->getProcessedOutput();
     
     // Always copy MIDI
@@ -76,27 +75,27 @@ void RackInstanceNode::process (const ProcessContext& pc)
         if (destChan < 0)
             continue;
 
-        if ((size_t) srcChan >= inputBuffers.audio.getNumChannels())
+        if ((choc::buffer::ChannelCount) srcChan >= inputBuffers.audio.getNumChannels())
             continue;
 
-        auto src = inputBuffers.audio.getSingleChannelBlock ((size_t) srcChan);
-        auto dest = pc.buffers.audio.getSingleChannelBlock ((size_t) destChan);
+        auto src = inputBuffers.audio.getChannel ((choc::buffer::ChannelCount) srcChan);
+        auto dest = pc.buffers.audio.getChannel ((choc::buffer::ChannelCount) destChan);
         auto gain = dbToGain (std::get<2> (chan)->getCurrentValue());
         
-        dest.copyFrom (src);
+        copy (dest, src);
 
         if (gain == lastGain[channel])
         {
             if (gain != 1.0f)
-                dest.multiplyBy (gain);
+                applyGain (dest, gain);
         }
         else
         {
             juce::SmoothedValue<float> smoother (lastGain[channel]);
             smoother.setTargetValue (gain);
-            smoother.reset ((int) dest.getNumSamples());
-            dest.multiplyBy (smoother);
-            
+            smoother.reset ((int) dest.getNumFrames());
+            applyGainPerFrame (dest, [&] { return smoother.getNextValue(); });
+
             lastGain[channel] = gain;
         }
         

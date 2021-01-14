@@ -244,7 +244,7 @@ struct Edit::TreeWatcher   : public juce::ValueTree::Listener
 
                 if (type == AuxSendPlugin::xmlTypeName || type == AuxReturnPlugin::xmlTypeName)
                 {
-                    if (i == IDs::enabled)
+                    if (i == IDs::enabled || i == IDs::busNum)
                         restart();
                 }
                 else if (type == RackInstance::xmlTypeName)
@@ -447,8 +447,8 @@ struct Edit::ChangedPluginsList
     /** Flushes all changed plugins to the Edit. */
     void flushAll()
     {
-        for (auto p : plugins)
-            if (p != nullptr)
+        for (auto plugin : plugins)
+            if (auto p = dynamic_cast<Plugin*> (plugin.get()))
                 p->flushPluginStateToValueTree();
 
         plugins.clear();
@@ -1083,7 +1083,7 @@ static juce::Array<SelectionManager*> getSelectionManagers (const Edit& ed)
     juce::Array<SelectionManager*> sms;
 
     for (SelectionManager::Iterator sm; sm.next();)
-        if (sm->edit == &ed)
+        if (sm->getEdit() == &ed)
             sms.add (sm.get());
 
     return sms;
@@ -1111,8 +1111,8 @@ void Edit::undo()           { undoOrRedo (true); }
 void Edit::redo()           { undoOrRedo (false); }
 
 Edit::UndoTransactionInhibitor::UndoTransactionInhibitor (Edit& e) : edit (&e)                                  { ++e.numUndoTransactionInhibitors; }
-Edit::UndoTransactionInhibitor::UndoTransactionInhibitor (const UndoTransactionInhibitor& o) : edit (o.edit)    { if (edit != nullptr) ++(edit->numUndoTransactionInhibitors); }
-Edit::UndoTransactionInhibitor::~UndoTransactionInhibitor()                                                     { if (edit != nullptr) --(edit->numUndoTransactionInhibitors); }
+Edit::UndoTransactionInhibitor::UndoTransactionInhibitor (const UndoTransactionInhibitor& o) : edit (o.edit)    { if (auto e = dynamic_cast<Edit*> (edit.get())) ++(e->numUndoTransactionInhibitors); }
+Edit::UndoTransactionInhibitor::~UndoTransactionInhibitor()                                                     { if (auto e = dynamic_cast<Edit*> (edit.get())) --(e->numUndoTransactionInhibitors); }
 
 //==============================================================================
 EditItemID Edit::createNewItemID (const std::vector<EditItemID>& idsToAvoid) const
@@ -1886,7 +1886,11 @@ void Edit::ensureTempoTrack()
 
 void Edit::ensureMarkerTrack()
 {
-    if (getMarkerTrack() == nullptr)
+    if (auto t = getMarkerTrack())
+    {
+        t->setName (TRANS("Marker"));
+    }
+    else
     {
         juce::ValueTree v (IDs::MARKERTRACK);
         v.setProperty (IDs::name, TRANS("Marker"), nullptr);
@@ -1896,10 +1900,14 @@ void Edit::ensureMarkerTrack()
 
 void Edit::ensureChordTrack()
 {
-    if (getChordTrack() == nullptr)
+    if (auto t = getChordTrack())
+    {
+        t->setName (TRANS("Chord"));
+    }
+    else
     {
         juce::ValueTree v (IDs::CHORDTRACK);
-        v.setProperty (IDs::name, TRANS("Chords"), nullptr);
+        v.setProperty (IDs::name, TRANS("Chord"), nullptr);
         state.addChild (v, 0, &getUndoManager());
     }
 }
@@ -1943,8 +1951,8 @@ void Edit::updateMirroredPlugins()
     mirroredPluginUpdateTimer->stopTimer();
 
     for (auto changed : mirroredPluginUpdateTimer->changedPlugins)
-        if (changed != nullptr)
-            sendMirrorUpdateToAllPlugins (*changed);
+        if (auto p = dynamic_cast<Plugin*> (changed.get()))
+            sendMirrorUpdateToAllPlugins (*p);
 
     mirroredPluginUpdateTimer->changedPlugins.clear();
 }

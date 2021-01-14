@@ -104,10 +104,11 @@ int LockFreeMultiThreadedNodePlayer::process (const Node::ProcessContext& pc)
     // Add output from graph to buffers
     {
         auto output = preparedNode.rootNode->getProcessedOutput();
-        const size_t numAudioChannels = std::min (output.audio.getNumChannels(), pc.buffers.audio.getNumChannels());
+        auto numAudioChannels = std::min (output.audio.getNumChannels(), pc.buffers.audio.getNumChannels());
 
         if (numAudioChannels > 0)
-            pc.buffers.audio.getSubsetChannelBlock (0, numAudioChannels).add (output.audio.getSubsetChannelBlock (0, numAudioChannels));
+            add (pc.buffers.audio.getFirstChannels (numAudioChannels),
+                 output.audio.getFirstChannels (numAudioChannels));
 
         pc.buffers.midi.mergeFrom (output.midi);
     }
@@ -308,16 +309,14 @@ Node* LockFreeMultiThreadedNodePlayer::updateProcessQueueForNode (Node& node)
             jassert (! outputPlaybackNode->hasBeenQueued);
             outputPlaybackNode->hasBeenQueued = true;
 
-            if (playbackNode->outputs.size() == 1)
-            {
-                return &outputPlaybackNode->node;
-            }
-            else
-            {
-                preparedNode.nodesReadyToBeProcessed.enqueue (&outputPlaybackNode->node);
-                numNodesQueued.fetch_add (1, std::memory_order_release);
-                threadPool->signalOne();
-            }
+            // If there is only one Node or we're at the last Node we can reutrn this to be processed by the same thread
+            if (playbackNode->outputs.size() == 1
+                || output == playbackNode->outputs.back())
+               return &outputPlaybackNode->node;
+            
+            preparedNode.nodesReadyToBeProcessed.enqueue (&outputPlaybackNode->node);
+            numNodesQueued.fetch_add (1, std::memory_order_release);
+            threadPool->signalOne();
         }
     }
 
@@ -348,7 +347,7 @@ void LockFreeMultiThreadedNodePlayer::processNode (Node& node)
     auto* nodeToProcess = &node;
 
     // Attempt to process serial Node chains on this thread
-    // to reduce context switched and overhead
+    // to reduce context switches and overhead
     for (;;)
     {
         #if JUCE_DEBUG

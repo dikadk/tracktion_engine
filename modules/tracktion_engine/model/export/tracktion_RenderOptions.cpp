@@ -308,7 +308,10 @@ Renderer::Parameters RenderOptions::getRenderParameters (Edit& edit, SelectionMa
     params.separateTracks           = tracksToSeparateFiles;
     params.addAntiDenormalisationNoise = EditPlaybackContext::shouldAddAntiDenormalisationNoise (edit.engine);
 
-    if (markedRegion && isMarkedRegionBigEnough (markedRegionTime))
+    if (! isMarkedRegionBigEnough (markedRegionTime))
+        markedRegion = false;
+    
+    if (markedRegion)
         params.time = markedRegionTime;
     else
         params.time = { 0.0, edit.getLength() };
@@ -510,6 +513,9 @@ Clip::Ptr RenderOptions::applyRenderToEdit (Edit& edit,
         case replaceClips:
             trackToUse = dynamic_cast<AudioTrack*> (lastTrack.get());
 
+        case addTrack:
+        case replaceTrack:
+        case none:
         default:
             break;
     }
@@ -582,7 +588,7 @@ Clip::Ptr RenderOptions::applyRenderToEdit (Edit& edit,
             if (markedRegion)
             {
                 if (selectionManager != nullptr)
-                    deleteRegionOfSelectedClips (*selectionManager, time, false, false);
+                    deleteRegionOfSelectedClips (*selectionManager, time, CloseGap::no, false);
 
                 newClip->setStart (time.getStart(), false, true);
             }
@@ -720,7 +726,8 @@ std::unique_ptr<RenderOptions> RenderOptions::forClipRender (Array<Clip*>& clips
         updateLastUsedRenderPath (*ro, edit.getProjectItemID().toString());
 
         ro->allowedClips = clips;
-
+        bool areAllClipsMono = true;
+        
         for (auto c : clips)
         {
             if (auto t = c->getTrack())
@@ -731,11 +738,23 @@ std::unique_ptr<RenderOptions> RenderOptions::forClipRender (Array<Clip*>& clips
                     if (auto dest = at->getOutput().getDestinationTrack())
                         ro->tracks.addIfNotAlreadyThere (dest->itemID);
             }
+            
+            // Assume any non-audio clips should be rendered in stereo
+            if (auto audioClip = dynamic_cast<AudioClipBase*> (c))
+            {
+                if (audioClip->getWaveInfo().numChannels > 1)
+                    areAllClipsMono = false;
+            }
+            else
+            {
+                areAllClipsMono = false;
+            }
         }
-
+        
         ro->type = midiNotes ? RenderType::midi
                              : RenderType::clip;
 
+        ro->stereo            = ! areAllClipsMono;
         ro->selectedClips     = false;
         ro->endAllowance      = ro->usePlugins ? findEndAllowance (edit, &ro->tracks, &clips) : 0.0;
         ro->removeSilence     = midiNotes;
@@ -834,13 +853,14 @@ String RenderOptions::getFormatTypeName (TargetFileFormat fmt)
 
     switch (fmt)
     {
-        case wav:       return am.getWavFormat()->getFormatName();
-        case aiff:      return am.getAiffFormat()->getFormatName();
-        case flac:      return am.getFlacFormat()->getFormatName();
-        case ogg:       return am.getOggFormat()->getFormatName();
-        case mp3:       return am.getLameFormat() == nullptr ? String() : am.getLameFormat()->getFormatName();
-        case midi:      return "MIDI file";
-        default:        return {};
+        case wav:           return am.getWavFormat()->getFormatName();
+        case aiff:          return am.getAiffFormat()->getFormatName();
+        case flac:          return am.getFlacFormat()->getFormatName();
+        case ogg:           return am.getOggFormat()->getFormatName();
+        case mp3:           return am.getLameFormat() == nullptr ? String() : am.getLameFormat()->getFormatName();
+        case midi:          return "MIDI file";
+        case numFormats:    return "MIDI file";
+        default:            return {};
     }
 }
 

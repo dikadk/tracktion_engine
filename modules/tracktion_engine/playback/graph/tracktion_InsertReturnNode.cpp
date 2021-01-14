@@ -41,7 +41,7 @@ bool InsertReturnNode::isReadyToProcess()
     return input->hasProcessed();
 }
 
-void InsertReturnNode::process (const ProcessContext&)
+void InsertReturnNode::process (ProcessContext&)
 {
     auto sourceBuffers = input->getProcessedOutput();
     owner.fillReturnBuffer (&sourceBuffers.audio, &sourceBuffers.midi);

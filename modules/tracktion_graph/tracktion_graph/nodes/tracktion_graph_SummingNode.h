@@ -105,7 +105,8 @@ public:
         useDoublePrecision = useDoublePrecision && nodes.size() > 1;
         
         if (useDoublePrecision)
-            tempDoubleBuffer.setSize (getNodeProperties().numberOfChannels, info.blockSize);
+            tempDoubleBuffer.resize ({ (choc::buffer::ChannelCount) getNodeProperties().numberOfChannels,
+                                       (choc::buffer::FrameCount) info.blockSize });
     }
 
     bool isReadyToProcess() override
@@ -117,7 +118,7 @@ public:
         return true;
     }
     
-    void process (const ProcessContext& pc) override
+    void process (ProcessContext& pc) override
     {
         if (useDoublePrecision)
             processDoublePrecision (pc);
@@ -131,28 +132,9 @@ private:
     std::vector<Node*> nodes;
     
     bool useDoublePrecision = false;
-    juce::AudioBuffer<double> tempDoubleBuffer;
+    choc::buffer::ChannelArrayBuffer<double> tempDoubleBuffer;
     
     //==============================================================================
-    template<typename DestType, typename SourceType>
-    static void addBlock (juce::dsp::AudioBlock<DestType>& dest, const juce::dsp::AudioBlock<SourceType>& src,
-                          size_t numChannels)
-    {
-        assert (dest.getNumChannels() <= numChannels);
-        assert (src.getNumChannels() <= numChannels);
-        assert (dest.getNumSamples() == src.getNumSamples());
-        const auto numSamples = dest.getNumSamples();
-
-        for (size_t c = 0; c < numChannels; ++c)
-        {
-            DestType* destChan = dest.getChannelPointer (c);
-            const SourceType* srcChan = src.getChannelPointer (c);
-
-            for (size_t i = 0; i < numSamples; ++i)
-                *destChan++ += static_cast<DestType> (*srcChan++);
-        }
-    }
-    
     void processSinglePrecision (const ProcessContext& pc)
     {
         const auto numChannels = pc.buffers.audio.getNumChannels();
@@ -162,45 +144,36 @@ private:
         {
             auto inputFromNode = node->getProcessedOutput();
             
-            const auto numChannelsToAdd = std::min (inputFromNode.audio.getNumChannels(), numChannels);
-
-            if (numChannelsToAdd > 0)
-                pc.buffers.audio.getSubsetChannelBlock (0, numChannelsToAdd)
-                    .add (node->getProcessedOutput().audio.getSubsetChannelBlock (0, numChannelsToAdd));
+            if (auto numChannelsToAdd = std::min (inputFromNode.audio.getNumChannels(), numChannels))
+                add (pc.buffers.audio.getFirstChannels (numChannelsToAdd),
+                     inputFromNode.audio.getFirstChannels (numChannelsToAdd));
             
             pc.buffers.midi.mergeFrom (inputFromNode.midi);
         }
     }
-    
+
     void processDoublePrecision (const ProcessContext& pc)
     {
         const auto numChannels = pc.buffers.audio.getNumChannels();
-        tempDoubleBuffer.clear();
-        assert (tempDoubleBuffer.getNumChannels() == (int) numChannels);
-        auto doubleBlock (juce::dsp::AudioBlock<double> (tempDoubleBuffer).getSubBlock (0, pc.buffers.audio.getNumSamples()));
+        auto doubleView = tempDoubleBuffer.getView().getStart (pc.buffers.audio.getNumFrames());
+        doubleView.clear();
 
         // Get each of the inputs and add them to dest
         for (auto& node : nodes)
         {
             auto inputFromNode = node->getProcessedOutput();
             
-            const auto numChannelsToAdd = std::min (inputFromNode.audio.getNumChannels(), numChannels);
+            if (auto numChannelsToAdd = std::min (inputFromNode.audio.getNumChannels(), numChannels))
+                add (doubleView.getFirstChannels (numChannelsToAdd),
+                     inputFromNode.audio.getFirstChannels (numChannelsToAdd));
 
-            if (numChannelsToAdd > 0)
-            {
-                auto destBlock = doubleBlock.getSubsetChannelBlock (0, numChannelsToAdd);
-                auto srcBlock = node->getProcessedOutput().audio.getSubsetChannelBlock (0, numChannelsToAdd);
-                addBlock (destBlock, srcBlock, numChannelsToAdd);
-            }
-            
             pc.buffers.midi.mergeFrom (inputFromNode.midi);
         }
-        
-        if (numChannels > 0)
-        {
-            auto floatBlock = pc.buffers.audio.getSubsetChannelBlock (0, numChannels);
-            addBlock (floatBlock, doubleBlock, numChannels);
-        }
+
+        assert (doubleView.getNumChannels() == (choc::buffer::ChannelCount) numChannels);
+
+        if (numChannels != 0)
+            add (pc.buffers.audio.getFirstChannels (numChannels), doubleView);
     }
 
     //==============================================================================

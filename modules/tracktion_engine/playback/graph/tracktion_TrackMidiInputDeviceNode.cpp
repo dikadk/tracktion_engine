@@ -16,6 +16,9 @@ TrackMidiInputDeviceNode::TrackMidiInputDeviceNode (MidiInputDevice& owner, std:
     : midiInputDevice (owner), input (std::move (inputNode)), copyInputsToOutputs (owner.isEndToEndEnabled())
 {
     jassert (midiInputDevice.isTrackDevice());
+
+    setOptimisations ({ tracktion_graph::ClearBuffers::yes,
+                        tracktion_graph::AllocateAudioBuffer::no });
 }
 
 std::vector<tracktion_graph::Node*> TrackMidiInputDeviceNode::getDirectInputNodes()
@@ -38,7 +41,7 @@ bool TrackMidiInputDeviceNode::isReadyToProcess()
     return input->hasProcessed();
 }
 
-void TrackMidiInputDeviceNode::process (const ProcessContext& pc)
+void TrackMidiInputDeviceNode::process (ProcessContext& pc)
 {
     SCOPED_REALTIME_CHECK
 
@@ -47,12 +50,12 @@ void TrackMidiInputDeviceNode::process (const ProcessContext& pc)
 
     if (copyInputsToOutputs)
     {
-        pc.buffers.audio.copyFrom (sourceBuffers.audio);
+        setAudioOutput (sourceBuffers.audio);
         pc.buffers.midi.copyFrom (sourceBuffers.midi);
     }
 
     // And pass MIDI to device
-    for (auto& m : pc.buffers.midi)
+    for (auto& m : sourceBuffers.midi)
         midiInputDevice.handleIncomingMidiMessage (nullptr, juce::MidiMessage (m, juce::Time::getMillisecondCounterHiRes() * 0.001 + m.getTimeStamp()));
 }
 

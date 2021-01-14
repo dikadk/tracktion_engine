@@ -84,6 +84,9 @@ TrackMutingNode::TrackMutingNode (std::unique_ptr<TrackMuteState> muteState, std
     : trackMuteState (std::move (muteState)), input (std::move (inputNode))
 {
     assert (trackMuteState);
+
+    setOptimisations ({ tracktion_graph::ClearBuffers::no,
+                        tracktion_graph::AllocateAudioBuffer::yes });
 }
 
 //==============================================================================
@@ -110,31 +113,45 @@ void TrackMutingNode::prefetchBlock (juce::Range<int64_t>)
     trackMuteState->update();
 }
 
-void TrackMutingNode::process (const ProcessContext& pc)
+void TrackMutingNode::process (ProcessContext& pc)
 {
     auto sourceBuffers = input->getProcessedOutput();
-    auto destAudioBlock = pc.buffers.audio;
-    jassert (sourceBuffers.audio.getNumChannels() == destAudioBlock.getNumChannels());
+    auto destAudioView = pc.buffers.audio;
+    jassert (sourceBuffers.audio.getSize() == destAudioView.getSize());
+    
+    const bool wasJustMuted = trackMuteState->wasJustMuted();
+    const bool wasJustUnMuted = trackMuteState->wasJustUnMuted();
 
     if (trackMuteState->shouldTrackBeAudible())
     {
         pc.buffers.midi.copyFrom (sourceBuffers.midi);
-        destAudioBlock.copyFrom (sourceBuffers.audio);
+        
+        // If we've just been muted/unmuted we need to copy the data to
+        // apply a fade to, otherwise we can just pass on the view
+        if (wasJustMuted || wasJustUnMuted)
+            copy (destAudioView, sourceBuffers.audio);
+        else
+            setAudioOutput (sourceBuffers.audio);
+    }
+    else
+    {
+        destAudioView.clear();
+        pc.buffers.midi.clear();
     }
 
-    if (trackMuteState->wasJustMuted())
-        rampBlock (destAudioBlock, 1.0f, 0.0f);
-    else if (trackMuteState->wasJustUnMuted())
-        rampBlock (destAudioBlock, 0.0f, 1.0f);
+    if (wasJustMuted)
+        rampBlock (destAudioView, 1.0f, 0.0f);
+    else if (wasJustUnMuted)
+        rampBlock (destAudioView, 0.0f, 1.0f);
 }
 
 //==============================================================================
-void TrackMutingNode::rampBlock (juce::dsp::AudioBlock<float>& audioBlock, float start, float end)
+void TrackMutingNode::rampBlock (choc::buffer::ChannelArrayView<float> view, float start, float end)
 {
-    if (audioBlock.getNumChannels() == 0)
+    if (view.getNumChannels() == 0)
         return;
     
-    auto buffer = tracktion_graph::test_utilities::createAudioBuffer (audioBlock);
+    auto buffer = tracktion_graph::toAudioBuffer (view);
     buffer.applyGainRamp (0, buffer.getNumSamples(), start, end);
 }
 

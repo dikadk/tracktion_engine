@@ -51,6 +51,14 @@
 #include <juce_dsp/juce_dsp.h>
 #include <juce_osc/juce_osc.h>
 
+#if __has_include(<choc/audio/choc_SampleBuffers.h>)
+ #include <choc/audio/choc_SampleBuffers.h>
+ #include <choc/audio/choc_MIDI.h>
+#else
+ #include "../3rd_party/choc/audio/choc_SampleBuffers.h"
+ #include "../3rd_party/choc/audio/choc_MIDI.h"
+#endif
+
 #undef __TEXT
 
 /** Config: TRACKTION_ENABLE_SINGLETONS
@@ -150,7 +158,7 @@
 #endif
 
 /** Config: TRACKTION_AIR_WINDOWS
-    Adds AirWindows effect plugins. Requires complaiance with AirWindows MIT license.
+    Adds AirWindows effect plugins. Requires compliance with AirWindows MIT license.
  */
 #ifndef TRACKTION_AIR_WINDOWS
  #define TRACKTION_AIR_WINDOWS 0
@@ -489,8 +497,6 @@ namespace tracktion_engine
 
 #include "model/clips/tracktion_EditClip.h"
 
-#include "selection/tracktion_Clipboard.h"
-
 #include "playback/audionodes/tracktion_FadeInOutAudioNode.h"
 #include "playback/audionodes/tracktion_TimedMutingAudioNode.h"
 
@@ -504,6 +510,8 @@ namespace tracktion_engine
 #include "model/tracks/tracktion_TrackCompManager.h"
 #include "model/export/tracktion_RenderOptions.h"
 #include "model/clips/tracktion_EditClipRenderJob.h"
+
+#include "selection/tracktion_Clipboard.h"
 
 #include "playback/devices/tracktion_InputDevice.h"
 #include "playback/devices/tracktion_MidiInputDevice.h"

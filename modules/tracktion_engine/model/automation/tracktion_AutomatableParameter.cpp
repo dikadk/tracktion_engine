@@ -605,7 +605,8 @@ AutomatableParameter::AutomatableParameter (const juce::String& paramID_,
     : paramID (paramID_),
       valueRange (vr),
       automatableEditElement (owner),
-      paramName (name_)
+      paramName (name_),
+      editRef (&automatableEditElement.edit)
 {
     if (auto p = dynamic_cast<Plugin*> (&owner))
     {
@@ -627,8 +628,6 @@ AutomatableParameter::AutomatableParameter (const juce::String& paramID_,
         jassertfalse; // Unknown AutomatableEditItem type
     }
 
-    editRef = &automatableEditElement.edit;
-
     modifiersState = parentState.getOrCreateChildWithName (IDs::MODIFIERASSIGNMENTS, &owner.edit.getUndoManager());
     curveSource = std::make_unique<AutomationCurveSource> (*this);
 
@@ -640,8 +639,8 @@ AutomatableParameter::AutomatableParameter (const juce::String& paramID_,
 
 AutomatableParameter::~AutomatableParameter()
 {
-    if (editRef != nullptr)
-        editRef->getAutomationRecordManager().parameterBeingDeleted (*this);
+    if (auto edit = dynamic_cast<Edit*> (editRef.get()))
+        edit->getAutomationRecordManager().parameterBeingDeleted (*this);
 
     notifyListenersOfDeletion();
 
@@ -1205,6 +1204,7 @@ AutomationIterator::AutomationIterator (const AutomatableParameter& p)
     const double minValueDelta  = (p.getValueRange().getLength()) / 256.0;
 
     int curveIndex = 0;
+    int lastCurveIndex = -1;
     double t = 0.0;
     float lastValue = 1.0e10;
     auto lastTime = curve.getPointTime (curve.getNumPoints() - 1) + 1.0;
@@ -1270,7 +1270,7 @@ AutomationIterator::AutomationIterator (const AutomatableParameter& p)
             }
         }
 
-        if (std::abs (v - lastValue) >= minValueDelta)
+        if (std::abs (v - lastValue) >= minValueDelta || curveIndex != lastCurveIndex)
         {
             jassert (t >= t1 && t <= t2);
 
@@ -1282,6 +1282,7 @@ AutomationIterator::AutomationIterator (const AutomatableParameter& p)
             points.add (point);
 
             lastValue = v;
+            lastCurveIndex = curveIndex;
         }
 
         t += timeDelta;

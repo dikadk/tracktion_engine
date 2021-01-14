@@ -23,7 +23,7 @@ public:
     {
     }
     
-    ~LevelMeasurerProcessingNode()
+    ~LevelMeasurerProcessingNode() override
     {
         if (isInitialised && ! meterPlugin.baseClassNeedsInitialising())
             meterPlugin.baseClassDeinitialise();
@@ -53,17 +53,18 @@ public:
         latencyProcessor->setLatencyNumSamples (numSamplesLatencyToIntroduce);
         latencyProcessor->prepareToPlay (info.sampleRate, info.blockSize, getNodeProperties().numberOfChannels);
         
-        tempAudioBuffer.setSize (getNodeProperties().numberOfChannels, info.blockSize);
+        tempAudioBuffer.resize ({ (choc::buffer::ChannelCount) getNodeProperties().numberOfChannels,
+                                  (choc::buffer::FrameCount) info.blockSize });
     }
     
-    void process (const ProcessContext& pc) override
+    void process (ProcessContext& pc) override
     {
         // Copy the input buffers to the outputs without applying latency
         auto sourceBuffers = input->getProcessedOutput();
         jassert (sourceBuffers.audio.getNumChannels() == pc.buffers.audio.getNumChannels());
 
         pc.buffers.midi.copyFrom (sourceBuffers.midi);
-        pc.buffers.audio.copyFrom (sourceBuffers.audio);
+        copy (pc.buffers.audio, sourceBuffers.audio);
             
         // If we have no latency, simply process the meter
         if (! latencyProcessor)
@@ -73,17 +74,17 @@ public:
         }
         
         // Otherwise, pass the buffers through the latency processor and process the meter
-        const auto numSamples = sourceBuffers.audio.getNumSamples();
+        const auto numFrames = sourceBuffers.audio.getNumFrames();
 
         latencyProcessor->writeAudio (sourceBuffers.audio);
         latencyProcessor->writeMIDI (sourceBuffers.midi);
         
-        tempAudioBuffer.clear();
         tempMidiBuffer.clear();
         
-        auto tempBlock = juce::dsp::AudioBlock<float> (tempAudioBuffer).getSubBlock (0, numSamples);
+        auto tempBlock = tempAudioBuffer.getStart (numFrames);
+        tempBlock.clear();
         latencyProcessor->readAudio (tempBlock);
-        latencyProcessor->readMIDI (tempMidiBuffer, (int) numSamples);
+        latencyProcessor->readMIDI (tempMidiBuffer, (int) numFrames);
         
         processLevelMeasurer (meterPlugin.measurer, tempBlock, tempMidiBuffer);
     }
@@ -96,7 +97,7 @@ private:
     
     std::shared_ptr<tracktion_graph::LatencyProcessor> latencyProcessor;
     
-    juce::AudioBuffer<float> tempAudioBuffer;
+    choc::buffer::ChannelArrayBuffer<float> tempAudioBuffer;
     MidiMessageArray tempMidiBuffer;
 
     //==============================================================================
@@ -114,9 +115,9 @@ private:
         isInitialised = true;
     }
     
-    void processLevelMeasurer (LevelMeasurer& measurer, juce::dsp::AudioBlock<float> block, MidiMessageArray& midi)
+    void processLevelMeasurer (LevelMeasurer& measurer, choc::buffer::ChannelArrayView<float> block, MidiMessageArray& midi)
     {
-        auto buffer = tracktion_graph::test_utilities::createAudioBuffer (block);
+        auto buffer = tracktion_graph::toAudioBuffer (block);
         measurer.processBuffer (buffer, 0, buffer.getNumSamples());
 
         measurer.setShowMidi (meterPlugin.showMidiActivity);

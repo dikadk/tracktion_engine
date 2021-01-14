@@ -11,6 +11,7 @@
 #pragma once
 
 #include <numeric>
+#include <juce_audio_formats/juce_audio_formats.h>
 
 namespace tracktion_graph
 {
@@ -94,81 +95,110 @@ namespace test_utilities
     static inline void writeToFile (juce::File file, const juce::AudioBuffer<float>& buffer, double sampleRate)
     {
         if (auto writer = std::unique_ptr<juce::AudioFormatWriter> (juce::WavAudioFormat().createWriterFor (file.createOutputStream().release(),
-                                                                                                            sampleRate, (uint32_t) buffer.getNumChannels(), 16, {}, 0)))
+                                                                                                            sampleRate,
+                                                                                                            (uint32_t) buffer.getNumChannels(),
+                                                                                                            16, {}, 0)))
         {
             writer->writeFromAudioSampleBuffer (buffer, 0, buffer.getNumSamples());
         }
     }
 
-    /** Creates an AudioBuffer from an AudioBlock. */
-    static inline juce::AudioBuffer<float> createAudioBuffer (const juce::dsp::AudioBlock<float>& block)
-    {
-        constexpr int maxNumChannels = 128;
-        const int numChannels = std::min (maxNumChannels, (int) block.getNumChannels());
-        float* chans[maxNumChannels] = {};
-
-        for (int i = 0; i < numChannels; ++i)
-            chans[i] = block.getChannelPointer ((size_t) i);
-
-        return juce::AudioBuffer<float> (chans, numChannels, (int) block.getNumSamples());
-    }
-
     /** Writes an audio block to a file. */
-    static inline void writeToFile (juce::File file, const juce::dsp::AudioBlock<float>& block, double sampleRate)
+    static inline void writeToFile (juce::File file, choc::buffer::ChannelArrayView<float> block, double sampleRate)
     {
-        writeToFile (file, createAudioBuffer (block), sampleRate);
-    }
-
-    /** Returns true if all the nodes in the graph have a unique nodeID. */
-    static inline bool areNodeIDsUnique (Node& node, bool ignoreZeroIDs)
-    {
-        std::vector<size_t> nodeIDs;
-        visitNodes (node, [&] (Node& n) { nodeIDs.push_back (n.getNodeProperties().nodeID); }, false);
-        std::sort (nodeIDs.begin(), nodeIDs.end());
-
-        if (ignoreZeroIDs)
-            nodeIDs.erase (std::remove_if (nodeIDs.begin(), nodeIDs.end(),
-                                           [] (auto nID) { return nID == 0; }),
-                           nodeIDs.end());
-
-        auto uniqueEnd = std::unique (nodeIDs.begin(), nodeIDs.end());
-        return uniqueEnd == nodeIDs.end();
+        writeToFile (file, toAudioBuffer (block), sampleRate);
     }
 
     //==============================================================================
     /** Returns the ammount of internal memory allocated for buffers. */
-    static inline size_t getMemoryUsage (const std::vector<Node*>& nodes, int prepareBlockSize)
+    static inline size_t getMemoryUsage (const std::vector<Node*>& nodes)
     {
         return std::accumulate (nodes.begin(), nodes.end(), (size_t) 0,
-                                [prepareBlockSize] (size_t total, Node* n)
+                                [] (size_t total, Node* n)
                                 {
-                                    return total + (size_t (n->getNodeProperties().numberOfChannels * prepareBlockSize) * sizeof (float));
+                                    return total + n->getAllocatedBytes();
                                 });
     }
 
     /** Returns the ammount of internal memory allocated for buffers. */
-    static inline size_t getMemoryUsage (Node& node, int prepareBlockSize)
+    static inline size_t getMemoryUsage (Node& node)
     {
-        return getMemoryUsage (tracktion_graph::getNodes (node, tracktion_graph::VertexOrdering::postordering), prepareBlockSize);
+        return getMemoryUsage (tracktion_graph::getNodes (node, tracktion_graph::VertexOrdering::postordering));
     }
+
+    /** Returns the ammount of internal memory allocated for buffers. */
+    inline juce::String getName (ThreadPoolStrategy type)
+    {
+        switch (type)
+        {
+            case ThreadPoolStrategy::conditionVariable: return "conditionVariable";
+            case ThreadPoolStrategy::realTime:          return "realTime";
+            case ThreadPoolStrategy::hybrid:            return "hybrid";
+        }
+
+        jassertfalse;
+        return {};
+    }
+
+    /** Logs the graph structure to the console. */
+    inline void logGraph (Node& node)
+    {
+        struct Visitor
+        {
+            static void logNode (Node& n, int depth)
+            {
+                juce::Logger::writeToLog (juce::String::repeatedString (" ", depth * 2) + typeid (n).name());
+            }
+
+            static void visitInputs (Node& n, int depth)
+            {
+                logNode (n, depth);
+                
+                for (auto input : n.getDirectInputNodes())
+                    visitInputs (*input, depth + 1);
+            }
+        };
+        
+        Visitor::visitInputs (node, 0);
+    }
+
+
+    //==============================================================================
+    struct SineOscillator
+    {
+        void reset (float frequency, double sampleRate)
+        {
+            phase = 0;
+            phaseIncrement = (float) ((frequency * juce::MathConstants<double>::pi * 2.0) / sampleRate);
+        }
+
+        float getNext()
+        {
+            auto v = std::sin (phase);
+            phase = std::fmod (phase + phaseIncrement, juce::MathConstants<float>::pi * 2.0f);
+            return v;
+        }
+
+        float phase = 0, phaseIncrement = 0;
+    };
 
     //==============================================================================
     template<typename AudioFormatType>
     std::unique_ptr<juce::TemporaryFile> getSinFile (double sampleRate, double durationInSeconds, int numChannels = 1, float frequency = 220.0f)
     {
         juce::AudioBuffer<float> buffer (numChannels, static_cast<int> (sampleRate * durationInSeconds));
-        juce::dsp::Oscillator<float> osc ([] (float in) { return std::sin (in); });
-        osc.setFrequency (frequency, true);
-        osc.prepare ({ double (sampleRate), uint32_t (buffer.getNumSamples()), uint32_t (buffer.getNumChannels()) });
 
-        int numSamples = buffer.getNumSamples();
+        SineOscillator osc;
+        osc.reset (frequency, sampleRate);
+
+        auto numSamples = buffer.getNumSamples();
 
         for (int c = 0; c < numChannels; ++c)
         {
             float* samples = buffer.getWritePointer (c);
 
             for (int i = 0; i < numSamples; ++i)
-                samples[i] = osc.processSample (0.0);
+                samples[i] = osc.getNext();
         }
 
         // Then write it to a temp file
@@ -181,7 +211,11 @@ namespace test_utilities
             const int qualityOptionIndex = numQualityOptions == 0 ? 0 : (numQualityOptions / 2);
             const int bitDepth = format.getPossibleBitDepths().contains (16) ? 16 : 32;
 
-            if (auto writer = std::unique_ptr<juce::AudioFormatWriter> (AudioFormatType().createWriterFor (fileStream.get(), sampleRate, (uint32_t) numChannels, bitDepth, {}, qualityOptionIndex)))
+            if (auto writer = std::unique_ptr<juce::AudioFormatWriter> (AudioFormatType().createWriterFor (fileStream.get(),
+                                                                                                           sampleRate,
+                                                                                                           (uint32_t) numChannels,
+                                                                                                           bitDepth, {},
+                                                                                                           qualityOptionIndex)))
             {
                 fileStream.release();
                 writer->writeFromAudioSampleBuffer (buffer, 0, buffer.getNumSamples());
@@ -279,7 +313,7 @@ namespace test_utilities
     /** Checks that there are no duplicate nodeIDs in a Node. */
     static inline void expectUniqueNodeIDs (juce::UnitTest& ut, Node& node, bool ignoreZeroIDs)
     {
-        auto areUnique = areNodeIDsUnique (node, ignoreZeroIDs);
+        auto areUnique = node_player_utils::areNodeIDsUnique (node, ignoreZeroIDs);
         ut.expect (areUnique, "nodeIDs are not unique");
 
         if (! areUnique)
@@ -308,7 +342,7 @@ namespace test_utilities
     {
         std::vector<TestSetup> setups;
 
-       #if JUCE_DEBUG
+       #if JUCE_DEBUG || GRAPH_UNIT_TESTS_QUICK_VALIDATE
         for (double sampleRate : { 44100.0, 96000.0 })
             for (int blockSize : { 64, 512 })
        #else
@@ -340,7 +374,7 @@ namespace test_utilities
             context = std::make_shared<TestContext>();
             context->tempFile = std::make_unique<juce::TemporaryFile> (".wav");
 
-            buffer.setSize  (numChannels, ts.blockSize);
+            buffer.resize  ({ (choc::buffer::ChannelCount) numChannels, (choc::buffer::FrameCount) ts.blockSize });
             numSamplesToDo = juce::roundToInt (durationInSeconds * ts.sampleRate);
 
             if (writeToFile && numChannels > 0)
@@ -384,24 +418,26 @@ namespace test_utilities
         {
             for (;;)
             {
-                const int maxNumThisTime = testSetup.randomiseBlockSizes ? std::min (testSetup.random.nextInt ({ 1, testSetup.blockSize }), numSamplesToDo)
-                                                                         : std::min (testSetup.blockSize, numSamplesToDo);
-                const int numThisTime = std::min (maxNumSamples, maxNumThisTime);
-                buffer.clear();
+                auto maxNumThisTime = testSetup.randomiseBlockSizes ? std::min (testSetup.random.nextInt ({ 1, testSetup.blockSize }), numSamplesToDo)
+                                                                    : std::min (testSetup.blockSize, numSamplesToDo);
+                auto numThisTime = std::min (maxNumSamples, maxNumThisTime);
                 midi.clear();
 
-                juce::AudioBuffer<float> subSectionBuffer (buffer.getArrayOfWritePointers(), buffer.getNumChannels(),
-                                                           0, numThisTime);
+                auto subSectionView = buffer.getStart ((choc::buffer::FrameCount) numThisTime);
+                subSectionView.clear();
+
                 const auto referenceSampleRange = juce::Range<int64_t>::withStartAndLength ((int64_t) numSamplesDone, (int64_t) numThisTime);
 
                 if (playHead)
                     playHead->setReferenceSampleRange (referenceSampleRange);
 
-                numProcessMisses += player->process ({ referenceSampleRange,
-                                                       { { subSectionBuffer }, midi } });
+                numProcessMisses += player->process ({ referenceSampleRange, { subSectionView, midi } });
 
                 if (writer)
-                    writer->writeFromAudioSampleBuffer (subSectionBuffer, 0, subSectionBuffer.getNumSamples());
+                {
+                    auto audioBuffer = tracktion_graph::toAudioBuffer (subSectionView);
+                    writer->writeFromAudioSampleBuffer (audioBuffer, 0, audioBuffer.getNumSamples());
+                }
 
                 // Copy MIDI to buffer
                 for (const auto& m : midi)
@@ -454,7 +490,7 @@ namespace test_utilities
         std::shared_ptr<TestContext> context;
         std::unique_ptr<juce::AudioFormatWriter> writer;
 
-        juce::AudioBuffer<float> buffer;
+        choc::buffer::ChannelArrayBuffer<float> buffer;
         tracktion_engine::MidiMessageArray midi;
         int numSamplesToDo = 0;
         int numSamplesDone = 0;
