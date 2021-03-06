@@ -211,6 +211,8 @@ RenderManager::Job::Ptr RenderOptions::performBackgroundRender (Edit& edit, Sele
     if (isTrackRender())
         p.endAllowance = markedRegion ? 0.0 : 10.0;
 
+    addAcidInfo (edit, p);
+
     return (p.audioFormat != nullptr || p.createMidiFile)
                 ? EditRenderJob::getOrCreateRenderJob (edit.engine, p, false, false, false)
                 : nullptr;
@@ -560,9 +562,35 @@ Clip::Ptr RenderOptions::applyRenderToEdit (Edit& edit,
     Clip::Ptr newClip;
 
     if (isMidiRender() || format == midi)
+    {
         newClip = trackToUse->insertMIDIClip (newClipName, insertPos, nullptr);
+    }
     else
+    {
+        bool allowAutoTempo = true;
+        bool allowAutoPitch = true;
+
+        for (auto c : allowedClips)
+        {
+            if (auto ac = dynamic_cast<WaveAudioClip*> (c))
+            {
+                if (! ac->getAutoTempo()) allowAutoTempo = false;
+                if (! ac->getAutoPitch()) allowAutoPitch = false;
+            }
+            else
+            {
+                allowAutoTempo = false;
+                allowAutoPitch = false;
+            }
+        }
+
         newClip = trackToUse->insertWaveClip (newClipName, projectItem->getID(), { insertPos, 0.0 }, false);
+        if (auto ac = dynamic_cast<WaveAudioClip*> (newClip.get()))
+        {
+            ac->setAutoTempo (allowAutoTempo);
+            ac->setAutoPitch (allowAutoPitch);
+        }
+    }
 
     if (newClip == nullptr)
     {

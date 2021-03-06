@@ -683,8 +683,10 @@ juce::Result mergeMidiClips (juce::Array<MidiClip*> clips)
                     MidiList sourceList;
                     sourceList.copyFrom (c->getSequenceLooped(), nullptr);
 
-                    sourceList.trimOutside (c->getOffsetInBeats(), c->getOffsetInBeats() + c->getLengthInBeats(), nullptr);
-                    sourceList.moveAllBeatPositions (c->getStartBeat() - startBeat - c->getOffsetInBeats(), nullptr);
+                    auto offset = c->getPosition().getOffset() * c->edit.tempoSequence.getBeatsPerSecondAt (c->getPosition().getStart(), true);
+
+                    sourceList.trimOutside (offset, offset + c->getLengthInBeats(), nullptr);
+                    sourceList.moveAllBeatPositions (c->getStartBeat() - startBeat - offset, nullptr);
 
                     destinationList.addFrom (sourceList, nullptr);
                 }
@@ -719,7 +721,7 @@ Plugin::Array getAllPlugins (const Edit& edit, bool includeMasterVolume)
                                               if (auto abc = dynamic_cast<AudioClipBase*> (clip))
                                               {
                                                   if (auto pluginList = abc->getPluginList())
-                                                      list.addArray (t.getAllPlugins());
+                                                      list.addArray (pluginList->getPlugins());
 
                                                   if (auto clipEffects = abc->getClipEffects())
                                                       for (auto effect : *clipEffects)
@@ -778,6 +780,20 @@ juce::Array<RackInstance*> getRackInstancesInEditForType (const RackType& rt)
                 instances.add (ri);
 
     return instances;
+}
+
+void muteOrUnmuteAllPlugins (Edit& edit)
+{
+    auto allPlugins = getAllPlugins (edit, true);
+
+    int numEnabled = 0;
+
+    for (auto p : allPlugins)
+        if (p->isEnabled())
+            ++numEnabled;
+
+    for (auto p : allPlugins)
+        p->setEnabled (numEnabled == 0);
 }
 
 

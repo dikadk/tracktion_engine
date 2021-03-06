@@ -36,10 +36,13 @@
 #include "tracktion_graph/tracktion_graph_tests_NodeVisiting.cpp"
 #include "tracktion_graph/tracktion_graph_Utility.cpp"
 
+#include "tracktion_graph/tracktion_graph_MultiThreadedNodePlayer.cpp"
 #include "tracktion_graph/tracktion_graph_LockFreeMultiThreadedNodePlayer.cpp"
 #include "tracktion_graph/tracktion_graph_NodePlayerThreadPools.cpp"
 
 #include "tracktion_graph/nodes/tracktion_graph_ConnectedNode.test.cpp"
 
+#include "utilities/tracktion_Semaphore.cpp"
+#include "utilities/tracktion_Semaphore.tests.cpp"
 #include "utilities/tracktion_Threads.cpp"
 

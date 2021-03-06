@@ -8,8 +8,6 @@
     Tracktion Engine uses a GPL/commercial licence - see LICENCE.md for details.
 */
 
-#pragma once
-
 #include <thread>
 #if JUCE_INTEL
  #include <emmintrin.h>
@@ -30,7 +28,8 @@ LockFreeMultiThreadedNodePlayer::LockFreeMultiThreadedNodePlayer (ThreadPoolCrea
 
 LockFreeMultiThreadedNodePlayer::~LockFreeMultiThreadedNodePlayer()
 {
-    clearThreads();
+    if (numThreadsToUse > 0)
+        clearThreads();
 }
 
 void LockFreeMultiThreadedNodePlayer::setNumThreads (size_t newNumThreads)
@@ -257,11 +256,13 @@ void LockFreeMultiThreadedNodePlayer::resetProcessQueue()
         playbackNode->numInputsToBeProcessed.store (playbackNode->numInputs, std::memory_order_release);
 
         // Check only ready nodes will be queued
+       #if JUCE_DEBUG
         if (playbackNode->node.isReadyToProcess())
             jassert (playbackNode->numInputsToBeProcessed == 0);
 
         if (playbackNode->numInputsToBeProcessed == 0)
             jassert (playbackNode->node.isReadyToProcess());
+       #endif
     }
 
    #if JUCE_DEBUG

@@ -74,6 +74,7 @@ tracktion_graph::NodeProperties MidiNode::getNodeProperties()
 void MidiNode::prepareToPlay (const tracktion_graph::PlaybackInitialisationInfo& info)
 {
     sampleRate = info.sampleRate;
+    timeForOneSample = tracktion_graph::sampleToTime (1, info.sampleRate);
     
     if (info.rootNodeToReplace != nullptr)
     {
@@ -168,6 +169,7 @@ void MidiNode::processSection (ProcessContext& pc, juce::Range<int64_t> timeline
     }
 
     auto volScale = clipLevel.getGain();
+    const auto lastBlockOfLoop = getPlayHeadState().isLastBlockOfLoop();
 
     for (;;)
     {
@@ -175,12 +177,15 @@ void MidiNode::processSection (ProcessContext& pc, juce::Range<int64_t> timeline
         {
             auto eventTime = meh->message.getTimeStamp();
 
-            if (eventTime >= localTime.getEnd())
+            // This correction here is to avoid rounding errors converting to and from sample position and times
+            const auto timeCorrection = lastBlockOfLoop ? (meh->message.isNoteOff() ? 0.0 : timeForOneSample) : 0.0;
+            
+            if (eventTime >= (localTime.getEnd() - timeCorrection))
                 break;
 
             eventTime -= localTime.getStart();
 
-            if (eventTime >= 0)
+            if (eventTime >= 0.0)
             {
                 juce::MidiMessage m (meh->message);
                 m.multiplyVelocity (volScale);

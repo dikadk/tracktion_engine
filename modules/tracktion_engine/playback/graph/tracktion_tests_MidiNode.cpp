@@ -43,7 +43,7 @@ private:
                                                                                     test_utilities::TestSetup ts, int numChannels, double durationInSeconds)
     {
         test_utilities::TestProcess<TracktionNodePlayer> testProcess (std::make_unique<TracktionNodePlayer> (std::move (node), processState, ts.sampleRate, ts.blockSize,
-                                                                                                             getPoolCreatorFunction (ThreadPoolStrategy::realTime)),
+                                                                                                             getPoolCreatorFunction (ThreadPoolStrategy::hybrid)),
                                                                       ts, numChannels, durationInSeconds, true);
         testProcess.setPlayHead (&processState.playHeadState.playHead);
         
@@ -100,7 +100,7 @@ private:
                                                                       processState,
                                                                       EditItemID());
             
-            auto testContext = createTracktionTestContext (processState, std::move (node), ts, 0, duration + 1.0);
+            auto testContext = createTracktionTestContext (processState, std::move (node), ts, 0, editTimeRange.getEnd());
 
             juce::MidiMessageSequence expectedSequence;
             expectedSequence.addSequence (masterSequence,
@@ -109,6 +109,7 @@ private:
                                           editTimeRange.getEnd());
 
             expectGreaterThan (expectedSequence.getNumEvents(), 0);
+            expectEquals (expectedSequence.getNumEvents(), masterSequence.getNumEvents());
             test_utilities::expectMidiBuffer (*this, testContext->midi, sampleRate, expectedSequence);
         }
     }

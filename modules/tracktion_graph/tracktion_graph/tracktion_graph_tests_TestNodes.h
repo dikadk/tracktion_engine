@@ -390,7 +390,7 @@ private:
 
 //==============================================================================
 //==============================================================================
-class SendNode final    : public Node
+class SendNode  : public Node
 {
 public:
     SendNode (std::unique_ptr<Node> inputNode, int busIDToUse,
@@ -593,9 +593,9 @@ private:
                 if (! gainFunction)
                     continue;
                 
-                sends.erase (std::find (sends.begin(), sends.end(), sends[(size_t) i]));
                 ownedNodes.push_back (makeNode<GainNode> (std::move (sends[(size_t) i]), std::move (gainFunction)));
-            }
+				sends.erase (std::find (sends.begin(), sends.end(), sends[(size_t) i]));
+			}
 
             auto node = makeNode<SummingNode> (std::move (ownedNodes), std::vector<Node*> (sends.begin(), sends.end()));
             input.swap (node);

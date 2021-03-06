@@ -25,7 +25,7 @@ namespace
         // we call this method. This should probably be moved to an EditItemCache like Clips and Tracks
         for (auto p : edit.getPluginCache().getPlugins())
             if (auto pt = dynamic_cast<PluginType*> (p))
-                if (pt->state.getParent().isValid())
+                if (pt->state.getParent().isValid() && pt->state.getRoot() == edit.state)
                     plugins.add (pt);
         
         return plugins;
@@ -493,7 +493,7 @@ std::unique_ptr<tracktion_graph::Node> createNodeForFrozenAudioTrack (AudioTrack
     if (isSidechainSource (track))
         node = makeNode<SendNode> (std::move (node), getSidechainBusID (track.itemID));
 
-    node = makeNode<TrackMutingNode> (std::move (trackMuteState), std::move (node));
+    node = makeNode<TrackMutingNode> (std::move (trackMuteState), std::move (node), false);
 
     return node;
 }
@@ -703,14 +703,8 @@ std::unique_ptr<tracktion_graph::Node> createPluginNodeForList (PluginList& list
         else if (auto sendPlugin = dynamic_cast<AuxSendPlugin*> (p))
         {
             if (sendPlugin->isEnabled())
-                node = makeNode<SendNode> (std::move (node), sendPlugin->busNumber,
-                                           [sendPlugin, trackMuteState]
-                                           {
-                                               if (trackMuteState && ! trackMuteState->shouldTrackBeAudible())
-                                                   return 0.0f;
-                    
-                                               return volumeFaderPositionToGain (sendPlugin->gain->getCurrentValue());
-                                           });
+                node = makeNode<AuxSendNode> (std::move (node), sendPlugin->busNumber, *sendPlugin,
+                                              playHeadState, trackMuteState);
         }
         else if (auto returnPlugin = dynamic_cast<AuxReturnPlugin*> (p))
         {
@@ -720,6 +714,11 @@ std::unique_ptr<tracktion_graph::Node> createPluginNodeForList (PluginList& list
         else if (auto rackInstance = dynamic_cast<RackInstance*> (p))
         {
             node = createNodeForRackInstance (*rackInstance, std::move (node));
+        }
+        else if (auto insertPlugin = dynamic_cast<InsertPlugin*> (p))
+        {
+            node = makeNode<InsertSendReturnDependencyNode> (std::move (node), *insertPlugin);
+            node = createNodeForPlugin (*p, trackMuteState, std::move (node), playHeadState, params);
         }
         else
         {
@@ -821,9 +820,8 @@ std::unique_ptr<tracktion_graph::Node> createNodeForAudioTrack (AudioTrack& at, 
         return createNodeForFrozenAudioTrack (at, playHeadState, params);
 
     auto inputTracks = getDirectInputTracks (at);
-    const bool muteForInputsWhenRecording = inputTracks.isEmpty();
     const bool processMidiWhenMuted = at.state.getProperty (IDs::processMidiWhenMuted, false);
-    auto clipsMuteState = std::make_unique<TrackMuteState> (at, muteForInputsWhenRecording, processMidiWhenMuted);
+    auto clipsMuteState = std::make_unique<TrackMuteState> (at, true, processMidiWhenMuted);
     auto trackMuteState = std::make_unique<TrackMuteState> (at, false, processMidiWhenMuted);
 
     const auto& clips = at.getClips();
@@ -832,7 +830,7 @@ std::unique_ptr<tracktion_graph::Node> createNodeForAudioTrack (AudioTrack& at, 
     if (node)
     {
         // When recording, clips should be muted but the plugin should still be audible so use two muting Nodes
-        node = makeNode<TrackMutingNode> (std::move (clipsMuteState), std::move (node));
+        node = makeNode<TrackMutingNode> (std::move (clipsMuteState), std::move (node), true);
         
         node = createTrackCompNode (at, playHeadState, std::move (node));
     }
@@ -895,7 +893,7 @@ std::unique_ptr<tracktion_graph::Node> createNodeForAudioTrack (AudioTrack& at, 
     if (isSidechainSource (at))
         node = makeNode<SendNode> (std::move (node), getSidechainBusID (at.itemID));
 
-    node = makeNode<TrackMutingNode> (std::move (trackMuteState), std::move (node));
+    node = makeNode<TrackMutingNode> (std::move (trackMuteState), std::move (node), false);
 
     if (! params.forRendering)
     {
@@ -971,7 +969,7 @@ std::unique_ptr<tracktion_graph::Node> createNodeForSubmixTrack (FolderTrack& su
     if (params.includePlugins)
         node = createPluginNodeForList (submixTrack.pluginList, trackMuteState.get(), std::move (node), params.processState.playHeadState, params);
 
-    node = makeNode<TrackMutingNode> (std::move (trackMuteState), std::move (node));
+    node = makeNode<TrackMutingNode> (std::move (trackMuteState), std::move (node), false);
 
     return node;
 }
@@ -1101,7 +1099,7 @@ std::unique_ptr<tracktion_graph::Node> createGroupFreezeNodeForDevice (Edit& edi
                                                              0.0, EditTimeRange(), LiveClipLevel(),
                                                              1.0, juce::AudioChannelSet::stereo(), juce::AudioChannelSet::stereo(),
                                                              processState, EditItemID::fromRawID ((uint64_t) device.getName().hash()), false);
-            return makeNode<TrackMutingNode> (std::make_unique<TrackMuteState> (edit), std::move (node));
+            return makeNode<TrackMutingNode> (std::make_unique<TrackMuteState> (edit), std::move (node), false);
         }
     }
 
@@ -1222,6 +1220,20 @@ std::unique_ptr<tracktion_graph::Node> createNodeForEdit (EditPlaybackContext& e
         }
     }
 
+    // Add deviceNodes for any devices only being used by the click track
+    for (int i = edit.engine.getDeviceManager().getNumOutputDevices(); --i >= 0;)
+    {
+        if (auto device = edit.engine.getDeviceManager().getOutputDeviceAt (i))
+        {
+            if (! edit.isClickTrackDevice (*device))
+                continue;
+            
+            auto& trackNodeVector = deviceNodes[device];
+            juce::ignoreUnused (trackNodeVector);
+            // We don't need to add anything to the vector, just ensure the device is in the map
+        }
+    }
+
 
     auto outputNode = std::make_unique<tracktion_graph::SummingNode>();
         
@@ -1268,8 +1280,12 @@ std::unique_ptr<tracktion_graph::Node> createNodeForEdit (EditPlaybackContext& e
         }
         
         if (edit.isClickTrackDevice (*device))
-            outputNode->addInput (makeNode<ClickNode> (edit, getNumChannelsFromDevice (*device),
-                                                       device->isMidi(), playHeadState.playHead));
+        {
+            auto clickAndTracksNode = makeSummingNode ({ node.release(),
+                                                         makeNode<ClickNode> (edit, getNumChannelsFromDevice (*device),
+                                                                              device->isMidi(), playHeadState.playHead).release() });
+            node = std::move (clickAndTracksNode);
+        }
 
         outputNode->addInput (createNodeForDevice (epc, *device, playHeadState, std::move (node)));
     }

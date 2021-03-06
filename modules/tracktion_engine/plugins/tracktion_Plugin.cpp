@@ -1196,6 +1196,24 @@ void Plugin::sortPlugins (Plugin::Array& plugins)
     }
 }
 
+void Plugin::sortPlugins (std::vector<Plugin*>& plugins)
+{
+    if (plugins.size() == 0 || plugins[0] == nullptr)
+        return;
+    
+    auto first = plugins[0];
+
+    PluginList list (first->edit);
+    list.initialise (first->state.getParent());
+
+    std::sort (plugins.begin(), plugins.end(),
+               [&list] (Plugin* a, Plugin* b)
+               {
+                   jassert (a != nullptr && b != nullptr);
+                   return list.indexOf (a) < list.indexOf (b);
+               });
+}
+
 void Plugin::getLeftRightChannelNames (StringArray* chans)
 {
     if (chans != nullptr)
