@@ -80,7 +80,7 @@ struct PitchShiftPlugin::Pimpl
 
             if (outputFifo.getNumReady() < fc.bufferNumSamples)
             {
-                jassertfalse;
+                //jassertfalse;
                 fc.destBuffer->clear (fc.bufferStartSample, fc.bufferNumSamples);
             }
             else

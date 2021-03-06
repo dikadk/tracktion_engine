@@ -120,7 +120,7 @@ public:
     static const int maxClipsInTrack = 1500;
     static const int maxPluginsOnClip = 5;
     static const int maxPluginsOnTrack = 16;
-    static const int maxNumMasterPlugins = 4;
+    static const int maxNumMasterPlugins = 6;
     static const int ticksPerQuarterNote = 960;
 
     //==============================================================================
