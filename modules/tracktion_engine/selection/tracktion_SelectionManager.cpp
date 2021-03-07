@@ -193,7 +193,7 @@ namespace tracktion_engine
                         if (!s->selectableListeners.contains(&l))
                             return;
 
-                        l.selectableObjectAboutToBeDeleted(s);
+                        //l.selectableObjectAboutToBeDeleted(s);
                     }
                     else
                     {
