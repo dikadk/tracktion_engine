@@ -44,10 +44,20 @@ struct CombiningNode::TimedNode
         }
     }
 
-    void prepareToPlay (const tracktion_graph::PlaybackInitialisationInfo& info)
+    void prepareToPlay (const tracktion_graph::PlaybackInitialisationInfo& info,
+                        choc::buffer::ChannelArrayView<float> audioView)
     {
+        auto info2 = info;
+        info2.allocateAudioBuffer = [&audioView] (choc::buffer::Size size)
+                                    {
+                                        jassert (audioView.getNumFrames() == size.numFrames);
+                                        jassert (audioView.getNumChannels() <= size.numChannels);
+                                        
+                                        return audioView.getFirstChannels (size.numChannels);
+                                    };
+        
         for (auto n : nodesToProcess)
-            n->initialise (info);
+            n->initialise (info2);
     }
     
     bool isReadyToProcess() const
@@ -164,10 +174,12 @@ tracktion_graph::NodeProperties CombiningNode::getNodeProperties()
 void CombiningNode::prepareToPlay (const tracktion_graph::PlaybackInitialisationInfo& info)
 {
     isReadyToProcessBlock.store (true, std::memory_order_release);
+    tempAudioBuffer.resize (choc::buffer::Size::create ((choc::buffer::ChannelCount) nodeProperties.numberOfChannels,
+                                                        (choc::buffer::FrameCount) info.blockSize));
 
     for (auto& i : inputs)
     {
-        i->prepareToPlay (info);
+        i->prepareToPlay (info, tempAudioBuffer.getView());
         
         if (! i->isReadyToProcess())
             isReadyToProcessBlock.store (false, std::memory_order_release);
@@ -210,7 +222,7 @@ void CombiningNode::process (ProcessContext& pc)
     SCOPED_REALTIME_CHECK
     const auto editTime = getEditTimeRange();
     const auto initialEvents = pc.buffers.midi.size();
-    
+
     if (auto g = groups[combining_node_utils::timeToGroupIndex (editTime.getStart())])
     {
         for (auto tan : *g)
@@ -220,6 +232,11 @@ void CombiningNode::process (ProcessContext& pc)
                 if (tan->time.start >= editTime.getEnd())
                     break;
 
+                // Clear the allocated storage
+                tempAudioBuffer.clear();
+                
+                // Then process the buffer.
+                // This will use the local buffer for the Nodes in the TimedNode and put the result in pc.buffers
                 tan->process (pc);
             }
         }
@@ -231,7 +248,7 @@ void CombiningNode::process (ProcessContext& pc)
 
 size_t CombiningNode::getAllocatedBytes() const
 {
-    size_t size = 0;
+    size_t size = tempAudioBuffer.getView().data.getBytesNeeded (tempAudioBuffer.getSize());
     
     for (const auto& i : inputs)
         size += i->getAllocatedBytes();

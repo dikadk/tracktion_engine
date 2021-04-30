@@ -11,6 +11,17 @@
 namespace tracktion_engine
 {
 
+static juce::String getDeprecatedPluginDescSuffix (const juce::PluginDescription& d)
+{
+    return "-" + String::toHexString (d.fileOrIdentifier.hashCode())
+         + "-" + String::toHexString (d.deprecatedUid);
+}
+
+juce::String createIdentifierString (const juce::PluginDescription& d)
+{
+    return d.pluginFormatName + "-" + d.name + getDeprecatedPluginDescSuffix (d);
+}
+
 struct ExternalPlugin::ProcessorChangedManager  : public juce::AudioProcessorListener,
                                                   private juce::AsyncUpdater
 {
@@ -523,12 +534,13 @@ ExternalPlugin::ExternalPlugin (PluginCreationInfo info)  : Plugin (info)
     dryGain->attachToCurrentValue (dryValue);
     wetGain->attachToCurrentValue (wetValue);
 
-    desc.uid = (int) state[IDs::uid].toString().getHexValue64();
+    desc.uniqueId = (int) state[IDs::uniqueId].toString().getHexValue64();
+    desc.deprecatedUid = (int) state[IDs::uid].toString().getHexValue64();
     desc.fileOrIdentifier = state[IDs::filename];
     setEnabled (state.getProperty (IDs::enabled, true));
     desc.name = state[IDs::name];
     desc.manufacturerName = state[IDs::manufacturer];
-    identiferString = desc.createIdentifierString();
+    identiferString = createIdentifierString (desc);
 
     initialiseFully();
 }
@@ -537,8 +549,8 @@ ValueTree ExternalPlugin::create (Engine& e, const PluginDescription& desc)
 {
     ValueTree v (IDs::PLUGIN);
     v.setProperty (IDs::type, xmlTypeName, nullptr);
-
-    v.setProperty (IDs::uid, String::toHexString (desc.uid), nullptr);
+    v.setProperty (IDs::uniqueId, String::toHexString (desc.uniqueId), nullptr);
+    v.setProperty (IDs::uid, String::toHexString (desc.deprecatedUid), nullptr);
     v.setProperty (IDs::filename, desc.fileOrIdentifier, nullptr);
     v.setProperty (IDs::name, desc.name, nullptr);
     v.setProperty (IDs::manufacturer, desc.manufacturerName, nullptr);
@@ -665,11 +677,16 @@ void ExternalPlugin::refreshParameterValues()
             p->valueChangedByPlugin();
 }
 
-std::unique_ptr<PluginDescription> ExternalPlugin::findDescForUID (int uid) const
+std::unique_ptr<PluginDescription> ExternalPlugin::findDescForUID (int uid, int deprecatedUid) const
 {
     if (uid != 0)
         for (auto d : engine.getPluginManager().knownPluginList.getTypes())
-            if (d.uid == uid)
+            if (d.uniqueId == uid)
+                return std::make_unique<PluginDescription> (d);
+    
+    if (deprecatedUid != 0)
+        for (auto d : engine.getPluginManager().knownPluginList.getTypes())
+            if (d.deprecatedUid == deprecatedUid)
                 return std::make_unique<PluginDescription> (d);
 
     return {};
@@ -691,17 +708,17 @@ std::unique_ptr<PluginDescription> ExternalPlugin::findDescForFileOrID (const St
     return {};
 }
 
-static std::unique_ptr<PluginDescription> findDescForName (Engine& engine, const String& name)
+static std::unique_ptr<PluginDescription> findDescForName (Engine& engine, const String& name, const String& format)
 {
     if (name.isEmpty())
         return {};
 
     auto& pm = engine.getPluginManager();
 
-    auto findName = [&pm] (const String& nameToFind) -> std::unique_ptr<PluginDescription>
+    auto findName = [&pm, format] (const String& nameToFind) -> std::unique_ptr<PluginDescription>
     {
         for (auto d : pm.knownPluginList.getTypes())
-            if (d.name == nameToFind)
+            if (d.name == nameToFind && d.pluginFormatName == format)
                 return std::make_unique<PluginDescription> (d);
 
         return {};
@@ -741,10 +758,19 @@ std::unique_ptr<PluginDescription> ExternalPlugin::findMatchingPlugin() const
     if (auto p = findDescForFileOrID (desc.fileOrIdentifier))
         return p;
 
-    if (auto p = findDescForUID (desc.uid))
+    if (auto p = findDescForUID (desc.uniqueId, desc.deprecatedUid))
         return p;
 
-    if (auto p = findDescForName (engine, desc.name))
+    auto getPreferredFormat = [] (juce::PluginDescription d)
+    {
+        auto file = d.fileOrIdentifier.toLowerCase();
+        if (file.endsWith (".vst3"))                            return "VST3";
+        if (file.endsWith (".vst") || file.endsWith (".dll"))   return "VST";
+        if (file.startsWith ("audiounit:"))                     return "AudioUnit";
+        return "";
+    };
+
+    if (auto p = findDescForName (engine, desc.name, getPreferredFormat (desc)))
         return p;
 
     for (auto d : pm.knownPluginList.getTypes())
@@ -755,8 +781,8 @@ std::unique_ptr<PluginDescription> ExternalPlugin::findMatchingPlugin() const
         if (File::createFileWithoutCheckingPath (d.fileOrIdentifier).getFileNameWithoutExtension() == desc.name)
             return std::make_unique<PluginDescription> (d);
 
-    if (desc.uid == 0x4d44416a) // old JX-10: hack to update to JX-16
-        if (auto p = findDescForUID (0x4D44414A))
+    if (desc.uniqueId == 0x4d44416a || desc.deprecatedUid == 0x4d44416a) // old JX-10: hack to update to JX-16
+        if (auto p = findDescForUID (0x4D44414A, 0x4D44414A))
             return p;
 
     return {};
@@ -787,7 +813,7 @@ void ExternalPlugin::doFullInitialisation()
     if (auto foundDesc = findMatchingPlugin())
     {
         desc = *foundDesc;
-        identiferString = desc.createIdentifierString();
+        identiferString = createIdentifierString (desc);
         updateDebugName();
 
         if (processing && pluginInstance == nullptr && edit.shouldLoadPlugins())
@@ -1488,6 +1514,18 @@ String ExternalPlugin::getProgramName (int index)
         return pluginInstance->getProgramName (index);
 
     return {};
+}
+
+bool ExternalPlugin::hasNameForMidiNoteNumber (int note, int midiChannel, juce::String& name)
+{
+    ignoreUnused (note, midiChannel, name);
+   #if TRACKTION_JUCE
+    if (takesMidiInput())
+        if (pluginInstance != nullptr)
+            return pluginInstance->hasNameForMidiNoteNumber (note, midiChannel, name);
+   #endif
+
+    return false;
 }
 
 bool ExternalPlugin::hasNameForMidiProgram (int programNum, int bank, String& name)

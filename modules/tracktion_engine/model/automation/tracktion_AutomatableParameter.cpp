@@ -811,7 +811,13 @@ void AutomatableParameter::valueTreePropertyChanged (juce::ValueTree& v, const j
     }
     else if (attachedValue != nullptr && attachedValue->updateIfMatches (v, i))
     {
+        // N.B.You shouldn't be directly setting the value of an attachedValue managed parameter.
+        // To avoid feedback loops of sync issues, always go via setParameter
+        
         SCOPED_REALTIME_CHECK
+        // N.B. we shouldn't call attachedValue->updateParameterFromValue here as this
+        // will set the base value of the parameter. The change in property could be due
+        // to a Modifier or automation change so we don't want to force that to be the base value
         listeners.call (&Listener::currentValueChanged, *this, currentValue);
     }
 }
@@ -1044,6 +1050,12 @@ void AutomatableParameter::setParameter (float value, juce::NotificationType nt)
     {
         jassert (nt != juce::sendNotificationAsync); // Async notifications not yet supported
         listeners.call (&Listener::parameterChanged, *this, currentValue);
+
+        if (attachedValue != nullptr)
+        {
+            // Updates the ValueTree via the CachedValue to the current parameter value synchronously
+            attachedValue->handleAsyncUpdate();
+        }
     }
 }
 
