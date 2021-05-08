@@ -23,6 +23,7 @@ public:
     using Ptr = juce::ReferenceCountedObjectPtr<MIDITrackerModifier>;
     using Array = juce::ReferenceCountedArray<MIDITrackerModifier>;
 
+    using Modifier::initialise;
     void initialise() override;
     juce::String getName() override                     { return TRANS("MIDI Tracker Modifier"); }
 
@@ -37,8 +38,9 @@ public:
 
     juce::StringArray getMidiInputNames() override;
     AudioNode* createPreFXAudioNode (AudioNode*) override;
+    ProcessingPosition getProcessingPosition() override { return ProcessingPosition::preFX; }
 
-    void applyToBuffer (const AudioRenderContext&) override;
+    void applyToBuffer (const PluginRenderContext&) override;
 
     //==============================================================================
     struct Assignment   : public AutomatableParameter::ModifierAssignment

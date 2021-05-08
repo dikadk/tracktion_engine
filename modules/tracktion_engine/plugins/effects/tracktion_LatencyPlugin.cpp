@@ -66,7 +66,8 @@ public:
     {
         for (int i = 0; i < numSamples; ++i)
         {
-            bufferWritePos = ++bufferWritePos % maxBufferSize;
+            ++bufferWritePos;
+            bufferWritePos = bufferWritePos % maxBufferSize;
             buffer[bufferWritePos] = samples[i];
 
             int bufferReadPos = bufferWritePos - bufferSize;
@@ -93,7 +94,8 @@ public:
 
         for (int i = 0; i < numSamples; ++i)
         {
-            bufferWritePos = ++bufferWritePos % maxBufferSize;
+            ++bufferWritePos;
+            bufferWritePos = bufferWritePos % maxBufferSize;
             buffer[bufferWritePos] = samples[i];
 
             int bufferReadPos = bufferWritePos - bufferSize;
@@ -165,7 +167,7 @@ void LatencyPlugin::deinitialise()
         delayCompensator[i]->clear();
 }
 
-void LatencyPlugin::applyToBuffer (const AudioRenderContext& rc)
+void LatencyPlugin::applyToBuffer (const PluginRenderContext& rc)
 {
     if (! applyLatency.get())
         return;

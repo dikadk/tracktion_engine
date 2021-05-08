@@ -252,7 +252,10 @@ SelectableClass* SelectableClass::findClassFor (const Selectable& s)
         return result;
    #endif
 
+<<<<<<< HEAD
     //jassertfalse;
+=======
+>>>>>>> 285a2abaa1f217ff966038ab1bb783d7f98e04b8
     return {};
 }
 
@@ -572,7 +575,7 @@ bool SelectionManager::copySelected()
 
         if (editViewID != -1)
         {
-            clipboardParams.edit = edit;
+            clipboardParams.edit = getEdit();
             clipboardParams.editViewID = editViewID;
         }
 
@@ -647,6 +650,11 @@ void SelectionManager::keepSelectedObjectsOnScreen()
 
     if (auto cls = getFirstSelectableClass())
         cls->keepSelectedObjectOnScreen (selected);
+}
+
+Edit* SelectionManager::getEdit() const
+{
+    return dynamic_cast<Edit*> (edit.get());
 }
 
 SelectionManager* SelectionManager::findSelectionManager (const Component* c)

@@ -85,8 +85,12 @@ public:
 
     bool updateBlocks()
     {
-        if (mapEntireFile && readers.size() > 0)
-            return false;
+        {
+            const juce::ScopedReadLock sl (readerLock);
+            
+            if (mapEntireFile && readers.size() > 0)
+                return false;
+        }
 
         const juce::ScopedLock scl (blockUpdateLock);
 
@@ -203,7 +207,7 @@ public:
 
             for (auto m : newReaders)
                 if (m != nullptr)
-                    totalBytesInUse -= m->getNumBytesUsed();
+                    totalBytesInUse -= static_cast<juce::int64> (m->getNumBytesUsed());
 
             anythingChanged = true;
         }
@@ -238,7 +242,7 @@ public:
                                   : r->mapEntireFile())
              && ! r->getMappedSection().isEmpty())
         {
-            totalBytesInUse += r->getNumBytesUsed();
+            totalBytesInUse += static_cast<juce::int64> (r->getNumBytesUsed());
             failedToOpenFile = false;
 
             info = AudioFileInfo (file, r.get(), af);
@@ -259,6 +263,8 @@ public:
 
     bool isUnused() const
     {
+        const juce::ScopedReadLock sl (clientListLock);
+        
         return clients.isEmpty();
     }
 
@@ -329,7 +335,7 @@ public:
                 lock.exitRead();
         }
 
-        juce::MemoryMappedAudioFormatReader* reader;
+        juce::MemoryMappedAudioFormatReader* reader = nullptr;
         juce::ReadWriteLock& lock;
         bool isLocked = true;
 
@@ -1015,6 +1021,7 @@ struct CacheAudioFormatReader  :  public juce::AudioFormatReader
         reader = file.engine->getAudioFileManager().cache.createReader (file);
     }
 
+    using juce::AudioFormatReader::readMaxLevels;
     void readMaxLevels (juce::int64 startSample, juce::int64 numSamples,
                         float& lowestLeft, float& highestLeft,
                         float& lowestRight, float& highestRight) override

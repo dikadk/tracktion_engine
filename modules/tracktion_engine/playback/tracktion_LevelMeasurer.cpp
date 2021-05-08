@@ -74,6 +74,14 @@ bool LevelMeasurer::Client::getAndClearOverload() noexcept
     return result;
 }
 
+bool LevelMeasurer::Client::getAndClearPeak() noexcept
+{
+    juce::SpinLock::ScopedLockType sl (mutex);
+    auto result = clearPeak;
+    clearPeak = false;
+    return result;
+}
+
 DbTimePair LevelMeasurer::Client::getAndClearMidiLevel() noexcept
 {
     juce::SpinLock::ScopedLockType sl (mutex);
@@ -109,6 +117,12 @@ void LevelMeasurer::Client::setClearOverload (bool clear) noexcept
     clearOverload = clear;
 }
 
+void LevelMeasurer::Client::setClearPeak (bool clear) noexcept
+{
+    juce::SpinLock::ScopedLockType sl (mutex);
+    clearPeak = clear;
+}
+
 void LevelMeasurer::Client::updateAudioLevel (int channel, DbTimePair newAudioLevel) noexcept
 {
     juce::SpinLock::ScopedLockType sl (mutex);
@@ -119,6 +133,8 @@ void LevelMeasurer::Client::updateAudioLevel (int channel, DbTimePair newAudioLe
 
 void LevelMeasurer::Client::updateMidiLevel (DbTimePair newMidiLevel) noexcept
 {
+    juce::SpinLock::ScopedLockType sl (mutex);
+    
     if (midiLevels.dB >= midiLevels.dB)
         midiLevels = newMidiLevel;
 }
@@ -132,7 +148,6 @@ void LevelMeasurer::processBuffer (juce::AudioBuffer<float>& buffer, int start, 
     if (clients.isEmpty())
         return;
 
-    float newLevel[Client::maxNumChannels] = {};
     auto numChans = jmin ((int) Client::maxNumChannels, buffer.getNumChannels());
     auto now = Time::getApproximateMillisecondCounter();
 
@@ -142,7 +157,6 @@ void LevelMeasurer::processBuffer (juce::AudioBuffer<float>& buffer, int start, 
         for (int i = numChans; --i >= 0;)
         {
             auto gain = buffer.getMagnitude (i, start, numSamples);
-            newLevel[i] = gain;
             bool overloaded = gain > 0.999f;
             auto newDB = gainToDb (gain);
 
@@ -163,7 +177,6 @@ void LevelMeasurer::processBuffer (juce::AudioBuffer<float>& buffer, int start, 
         for (int i = numChans; --i >= 0;)
         {
             auto gain = buffer.getRMSLevel (i, start, numSamples);
-            newLevel[i] = gain;
             bool overloaded = gain > 0.999f;
             auto newDB = gainToDb (gain);
 
@@ -183,8 +196,6 @@ void LevelMeasurer::processBuffer (juce::AudioBuffer<float>& buffer, int start, 
         // sum + diff
         float sum, diff;
         getSumAndDiff (buffer, sum, diff, start, numSamples);
-        newLevel[0] = sum;
-        newLevel[1] = diff;
 
         auto sumDB  = gainToDb (sum);
         auto diffDB = gainToDb (diff);
@@ -240,6 +251,14 @@ void LevelMeasurer::clearOverload()
 
     for (auto c : clients)
         c->setClearOverload (true);
+}
+
+void LevelMeasurer::clearPeak()
+{
+    const ScopedLock sl (clientsMutex);
+
+    for (auto c : clients)
+        c->setClearPeak (true);
 }
 
 void LevelMeasurer::clear()

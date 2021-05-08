@@ -12,7 +12,7 @@ namespace tracktion_engine
 {
 
 /**
-    A raw, proprietory, simple floating point format used for freeze files, etc.
+    A raw, proprietary, simple floating point format used for freeze files, etc.
 */
 class FloatAudioFormat   : public juce::AudioFormat
 {
@@ -28,10 +28,13 @@ public:
     bool canHandleFile (const juce::File&) override;
 
     //==============================================================================
+    using juce::AudioFormat::createReaderFor;
     juce::AudioFormatReader* createReaderFor (juce::InputStream*, bool deleteStreamIfOpeningFails) override;
 
+    using juce::AudioFormat::createMemoryMappedReader;
     juce::MemoryMappedAudioFormatReader* createMemoryMappedReader (const juce::File&) override;
 
+    using juce::AudioFormat::createWriterFor;
     juce::AudioFormatWriter* createWriterFor (juce::OutputStream*, double sampleRate,
                                               unsigned int numChannels, int bitsPerSample,
                                               const juce::StringPairArray& metadataValues,

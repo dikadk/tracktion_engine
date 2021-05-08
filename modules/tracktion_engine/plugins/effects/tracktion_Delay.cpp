@@ -63,7 +63,7 @@ void DelayPlugin::reset()
     delayBuffer.clearBuffer();
 }
 
-void DelayPlugin::applyToBuffer (const AudioRenderContext& fc)
+void DelayPlugin::applyToBuffer (const PluginRenderContext& fc)
 {
     if (fc.destBuffer == nullptr)
         return;

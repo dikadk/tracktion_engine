@@ -19,6 +19,7 @@ public:
     static juce::ValueTree createControllerEvent (const MidiControllerEvent&, double beat);
 
     MidiControllerEvent (const juce::ValueTree&);
+    MidiControllerEvent (MidiControllerEvent&&) = default;
 
     //==============================================================================
     int getControllerValue() const noexcept                         { return value; }
@@ -41,6 +42,7 @@ public:
     //==============================================================================
     /** Controller type, from the list below */
     int getType() const noexcept                { return type; }
+    void setType (int type, juce::UndoManager* um);
 
     enum ExtraControllerTypes
     {

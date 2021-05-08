@@ -23,6 +23,7 @@ public:
     using Ptr = juce::ReferenceCountedObjectPtr<RandomModifier>;
     using Array = juce::ReferenceCountedArray<RandomModifier>;
 
+    using Modifier::initialise;
     void initialise() override;
     juce::String getName() override                     { return TRANS("Random Modifier"); }
 
@@ -38,6 +39,8 @@ public:
     AutomatableParameter::ModifierAssignment* createAssignment (const juce::ValueTree&) override;
 
     AudioNode* createPreFXAudioNode (AudioNode*) override;
+    ProcessingPosition getProcessingPosition() override { return ProcessingPosition::preFX; }
+    void applyToBuffer (const PluginRenderContext&) override;
 
     //==============================================================================
     struct Assignment : public AutomatableParameter::ModifierAssignment
