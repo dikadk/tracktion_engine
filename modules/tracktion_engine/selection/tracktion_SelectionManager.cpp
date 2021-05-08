@@ -251,11 +251,7 @@ SelectableClass* SelectableClass::findClassFor (const Selectable& s)
     if (result != nullptr)
         return result;
    #endif
-
-<<<<<<< HEAD
-    //jassertfalse;
-=======
->>>>>>> 285a2abaa1f217ff966038ab1bb783d7f98e04b8
+    
     return {};
 }
 
