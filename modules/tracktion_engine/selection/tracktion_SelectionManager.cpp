@@ -251,7 +251,7 @@ SelectableClass* SelectableClass::findClassFor (const Selectable& s)
     if (result != nullptr)
         return result;
    #endif
-    
+
     return {};
 }
 

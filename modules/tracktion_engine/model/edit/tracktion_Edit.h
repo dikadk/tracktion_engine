@@ -167,7 +167,7 @@ public:
     static const int maxClipsInTrack = 1500;    /**< The maximum number of Clip[s] a Track can contain. */
     static const int maxPluginsOnClip = 5;      /**< The maximum number of Plugin[s] a Clip can contain. */
     static const int maxPluginsOnTrack = 16;    /**< The maximum number of Plugin[s] a Track can contain. */
-    static const int maxNumMasterPlugins = 4;   /**< The maximum number of master Plugin[s] and Edit can contain. */
+    static const int maxNumMasterPlugins = 6;   /**< The maximum number of master Plugin[s] and Edit can contain. */
     static const int ticksPerQuarterNote = 960; /**< The number of ticks per quarter note. */
 
     //==============================================================================
