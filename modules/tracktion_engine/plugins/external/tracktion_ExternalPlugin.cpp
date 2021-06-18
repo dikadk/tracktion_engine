@@ -841,6 +841,8 @@ void ExternalPlugin::doFullInitialisation()
 
                 pluginInstance->setPlayHead (playhead.get());
                 supportsMPE = pluginInstance->supportsMPE();
+
+                engine.getEngineBehaviour().doAdditionalInitialisation (*this);
             }
             else
             {
@@ -1787,6 +1789,16 @@ void ExternalPlugin::valueTreePropertyChanged (ValueTree& v, const juce::Identif
     {
         Plugin::valueTreePropertyChanged (v, id);
     }
+}
+
+juce::Array<Exportable::ReferencedItem> ExternalPlugin::getReferencedItems()
+{
+    return engine.getEngineBehaviour().getReferencedItems (*this);
+}
+
+void ExternalPlugin::reassignReferencedItem (const ReferencedItem& itm, ProjectItemID newID, double newStartTime)
+{
+    engine.getEngineBehaviour().reassignReferencedItem (*this, itm, newID, newStartTime);
 }
 
 //==============================================================================
