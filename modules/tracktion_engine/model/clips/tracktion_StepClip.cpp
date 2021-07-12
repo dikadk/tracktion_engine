@@ -417,7 +417,7 @@ void StepClip::generateMidiSequence (MidiMessageSequence& result,
             if (instance != nullptr && p.get() != instance)
                 continue;
 
-            //MODIFIED
+            //if isMuted don't generate midi notes for playback
             if(p->getPattern().isMute()){
                 break;
             }

@@ -197,7 +197,8 @@ struct Edit::TreeWatcher   : public juce::ValueTree::Listener
             }
             else if (v.hasType (IDs::PATTERN))
             {
-                if (i == IDs::noteLength || i == IDs::numNotes)
+                //MODIFIED
+                if (i == IDs::noteLength || i == IDs::numNotes || i == IDs::mute)
                     restart();
             }
             else if (v.hasType (IDs::SEQUENCE))
