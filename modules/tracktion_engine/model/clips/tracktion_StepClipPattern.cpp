@@ -341,6 +341,14 @@ void StepClip::Pattern::toggleAtInterval (int channel, int interval)
     setChannel (channel, c);
 }
 
+
+bool StepClip::Pattern::isMute() const{
+    return state[IDs::mute];
+}
+void StepClip::Pattern::setMute(bool muted){
+    state.setProperty(IDs::mute, muted, clip.getUndoManager());
+}
+
 StepClip::Pattern::CachedPattern::CachedPattern (const Pattern& p, int c)
     : notes (p.getChannel (c)),
       velocities (p.getVelocities (c)),

@@ -417,6 +417,11 @@ void StepClip::generateMidiSequence (MidiMessageSequence& result,
             if (instance != nullptr && p.get() != instance)
                 continue;
 
+            //MODIFIED
+            if(p->getPattern().isMute()){
+                break;
+            }
+
             auto startBeat = starts.getUnchecked (i);
 
             generateMidiSequenceForChannels (result, convertToSeconds, p->getPattern(), startBeat,

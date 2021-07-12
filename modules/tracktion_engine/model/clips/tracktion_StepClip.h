@@ -109,6 +109,9 @@ public:
         float getProbability (int channel, int index) const;
         void setProbability (int channel, int index, float value);
 
+        bool isMute() const;
+        void setMute(bool muted);
+
         /** Creates a snapshot of a pattern's notes, velocities and gates to avoid costly
             property parsing. Obviously if you change a property this will become invalid.
          */
@@ -132,6 +135,8 @@ public:
         juce::ValueTree state;
 
     private:
+
+        bool isMuted{false};
         Pattern& operator= (const Pattern&) = delete;
         JUCE_LEAK_DETECTOR (Pattern)
     };
