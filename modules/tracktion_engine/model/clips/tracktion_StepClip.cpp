@@ -419,7 +419,7 @@ void StepClip::generateMidiSequence (MidiMessageSequence& result,
 
             //if isMuted don't generate midi notes for playback
             if(p->getPattern().isMute()){
-                break;
+                continue;
             }
 
             auto startBeat = starts.getUnchecked (i);
