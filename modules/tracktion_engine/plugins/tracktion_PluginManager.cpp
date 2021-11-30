@@ -23,7 +23,7 @@ MemoryBlock createScanMessage (const juce::XmlElement& xml)
     return mo.getMemoryBlock();
 }
 
-struct PluginScanMasterProcess  : private ChildProcessMaster
+struct PluginScanMasterProcess  : private ChildProcessCoordinator
 {
     PluginScanMasterProcess (Engine& e) : engine (e) {}
 
@@ -34,7 +34,7 @@ struct PluginScanMasterProcess  : private ChildProcessMaster
 
         crashed = false;
         // don't get stdout or strerr from the child process. We don't do anything with it and it fills up the pipe and hangs
-        launched = launchSlaveProcess (File::getSpecialLocation (File::currentExecutableFile), commandLineUID, 0, 0);
+        launched = launchWorkerProcess (File::getSpecialLocation (File::currentExecutableFile), commandLineUID, 0, 0);
 
         if (launched)
         {
@@ -56,7 +56,7 @@ struct PluginScanMasterProcess  : private ChildProcessMaster
         m.setAttribute ("type", format.getName());
         m.setAttribute ("file", fileOrIdentifier);
 
-        return sendMessageToSlave (createScanMessage (m));
+        return sendMessageToWorker (createScanMessage (m));
     }
 
     bool waitForReply (int requestID, const String& fileOrIdentifier,
@@ -162,7 +162,7 @@ private:
         return {};
     }
 
-    void handleMessageFromSlave (const MemoryBlock& mb) override
+    void handleMessageFromWorker (const MemoryBlock& mb) override
     {
         if (auto xml = std::unique_ptr<XmlElement> (XmlDocument::parse (mb.toString())))
             handleMessage (*xml);
@@ -172,7 +172,7 @@ private:
 };
 
 //==============================================================================
-struct PluginScanSlaveProcess  : public ChildProcessSlave,
+struct PluginScanSlaveProcess  : public ChildProcessWorker,
                                  private AsyncUpdater
 {
     PluginScanSlaveProcess()
@@ -208,7 +208,7 @@ struct PluginScanSlaveProcess  : public ChildProcessSlave,
             }
         }
 
-        sendMessageToMaster (createScanMessage (result));
+        sendMessageToCoordinator (createScanMessage (result));
     }
 
     void handleMessage (const juce::XmlElement& xml)
@@ -223,7 +223,7 @@ private:
     AudioPluginFormatManager pluginFormatManager;
     OwnedArray<XmlElement, CriticalSection> pendingMessages;
 
-    void handleMessageFromMaster (const MemoryBlock& mb) override
+    void handleMessageFromCoordinator (const MemoryBlock& mb) override
     {
         if (auto xml = std::unique_ptr<XmlElement> (XmlDocument::parse (mb.toString())))
         {

@@ -19,7 +19,7 @@
 
   ID:               tracktion_graph
   vendor:           Tracktion Corporation
-  version:          0.0.1
+  version:          1.0.0
   name:             The Tracktion graph audio engine
   description:      Classes for creating and processing audio graphs
   website:          http://www.tracktion.com
@@ -85,6 +85,7 @@
 #include "utilities/tracktion_GlueCode.h"
 #include "utilities/tracktion_AudioFifo.h"
 #include "utilities/tracktion_MidiMessageArray.h"
+#include "utilities/tracktion_PerformanceMeasurement.h"
 #include "utilities/tracktion_RealTimeSpinLock.h"
 #include "utilities/tracktion_Semaphore.h"
 #include "utilities/tracktion_Threads.h"

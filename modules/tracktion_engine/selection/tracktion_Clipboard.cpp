@@ -445,10 +445,10 @@ void Clipboard::Clips::addSelectedClips (const SelectableList& selectedObjects, 
         return;
 
     auto& ed = clipsToPaste.getFirst()->edit;
-
+    
     auto allTracks = getAllTracks (ed);
 
-    auto firstTrackIndex = Edit::maxNumTracks;
+    auto firstTrackIndex = ed.engine.getEngineBehaviour().getEditLimits().maxNumTracks;
     auto overallStartTime = Edit::maximumLength;
 
     for (auto clip : clipsToPaste)
@@ -477,14 +477,24 @@ void Clipboard::Clips::addSelectedClips (const SelectableList& selectedObjects, 
 
             auto acb = dynamic_cast<AudioClipBase*> (clip);
 
-            if (acb != nullptr && range != Edit::getMaximumEditTimeRange())
+            if (acb != nullptr)
             {
-                auto inOutPoints = clip->getEditTimeRange().getIntersectionWith (range);
-                EditTimeRange fadeIn (clipPos.getStart(), clipPos.getStart() + acb->getFadeIn());
-                EditTimeRange fadeOut (clipPos.getEnd() - acb->getFadeOut(), clipPos.getEnd());
+                // If we're just pasting in to the Edit without trying to fit it in to a range,
+                // we need to flush the fade in/out so pasted clips don't get default edge fades
+                if (range == Edit::getMaximumEditTimeRange())
+                {
+                    info.state.setProperty (IDs::fadeIn,  acb->getFadeIn(), nullptr);
+                    info.state.setProperty (IDs::fadeOut, acb->getFadeOut(), nullptr);
+                }
+                else
+                {
+                    auto inOutPoints = clip->getEditTimeRange().getIntersectionWith (range);
+                    EditTimeRange fadeIn (clipPos.getStart(), clipPos.getStart() + acb->getFadeIn());
+                    EditTimeRange fadeOut (clipPos.getEnd() - acb->getFadeOut(), clipPos.getEnd());
 
-                info.state.setProperty (IDs::fadeIn,  fadeIn.overlaps (inOutPoints)  ? fadeIn.getIntersectionWith (inOutPoints).getLength() : 0.0, nullptr);
-                info.state.setProperty (IDs::fadeOut, fadeOut.overlaps (inOutPoints) ? fadeOut.getIntersectionWith (inOutPoints).getLength() : 0.0, nullptr);
+                    info.state.setProperty (IDs::fadeIn,  fadeIn.overlaps (inOutPoints)  ? fadeIn.getIntersectionWith (inOutPoints).getLength() : 0.0, nullptr);
+                    info.state.setProperty (IDs::fadeOut, fadeOut.overlaps (inOutPoints) ? fadeOut.getIntersectionWith (inOutPoints).getLength() : 0.0, nullptr);
+                }
             }
 
             info.trackOffset = allTracks.indexOf (clip->getTrack()) - firstTrackIndex;
@@ -512,8 +522,9 @@ void Clipboard::Clips::addAutomation (const juce::Array<TrackSection>& trackSect
     if (range.isEmpty() || trackSections.isEmpty())
         return;
     
-    auto allTracks = getAllTracks (trackSections.getFirst().track->edit);
-    auto firstTrackIndex = Edit::maxNumTracks;
+    auto& edit = trackSections.getFirst().track->edit;
+    auto allTracks = getAllTracks (edit);
+    auto firstTrackIndex = edit.engine.getEngineBehaviour().getEditLimits().maxNumTracks;
     auto overallStartTime = Edit::maximumLength;
 
     for (const auto& trackSection : trackSections)
@@ -1548,7 +1559,8 @@ static bool pastePluginIntoTrack (const Plugin::Ptr& newPlugin, EditInsertPoint&
 {
     double startPos = 0.0;
     Track::Ptr track;
-    insertPoint.chooseInsertPoint (track, startPos, false, sm);
+    insertPoint.chooseInsertPoint (track, startPos, false, sm,
+                                   [] (auto& t) { return t.isAudioTrack() || t.isFolderTrack() || t.isMasterTrack(); });
     jassert (track != nullptr);
 
     if (track != nullptr && track->canContainPlugin (newPlugin.get()))

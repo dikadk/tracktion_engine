@@ -1,8 +1,8 @@
 ![](tutorials/images/tracktion_engine_powered.png)
 
-master: [![Build Status](https://dev.azure.com/TracktionDev/tracktion_engine_dev/_apis/build/status/Tracktion.tracktion_engine_dev?branchName=master)](https://dev.azure.com/TracktionDev/tracktion_engine_dev/_apis/build/status/Tracktion.tracktion_engine_dev?branchName=master)
+master: [![Build](https://github.com/Tracktion/tracktion_engine/actions/workflows/build.yaml/badge.svg?branch=master)](https://github.com/Tracktion/tracktion_engine/actions/workflows/build.yaml)
 
-develop: [![Build Status](https://dev.azure.com/TracktionDev/tracktion_engine_dev/_apis/build/status/Tracktion.tracktion_engine_dev?branchName=develop)](https://dev.azure.com/TracktionDev/tracktion_engine_dev/_apis/build/status/Tracktion.tracktion_engine_dev?branchName=develop)
+develop: [![Build](https://github.com/Tracktion/tracktion_engine/actions/workflows/build.yaml/badge.svg?branch=develop)](https://github.com/Tracktion/tracktion_engine/actions/workflows/build.yaml)
 
 # tracktion_engine
 ##### Welcome to the Tracktion Engine repository!
@@ -25,15 +25,18 @@ $ git clone --recurse-submodules https://github.com/Tracktion/tracktion_engine.g
 ```
 
 ## Examples
-Example projects are located in `/examples`. Because these are provided as JUCE PIPs, the `Projucer` needs to be built to generate the projects. This can be easily done with the scripts contained in `/tests`.
+Example projects are located in `/examples`. These are provided as JUCE PIPs, and CMakeLists.txt files to build them using CMake. You will need CMake installed to generate the examples.
+To generate all the examples for the running platform use the script in `/tests`.
 ```
-$ cd tests/mac
+$ cd tests
 $ ./generate_examples
 ```
-`generate_examples` will build the Projucer and generate the project files for you. Alternatively you can run the `build_examples` script to build the examples as well, ready to run.
+`generate_examples` will generate the IDE project files for you. Alternatively you can run the `build` script to build the examples as well, ready to run.
 
-Once the example projects have been generated or built you can find them in `examples/projects`.
+Once the example projects have been generated or built you can find them in `examples/example_name/build`.
 Start with the `PitchAndTimeDemo` or `StepSequencerDemo` to see some basic apps in action.
+
+*If you want to build the Projucer app from JUCE you can load each of the PIP examples directly to generate the IDE files.*
 
 ## Tutorials
 Once you're ready to dive in to the code, open the IDE files and have a read through the tutorials in `/tutorials`. You can view these on GitHub [here](/tutorials) to see the rendered Markdown.
@@ -42,7 +45,7 @@ Once you're ready to dive in to the code, open the IDE files and have a read thr
 We are still in the process of fleshing out Doxygen formatted comments but the Doxygen generated documentation can be found here: https://tracktion.github.io/tracktion_engine/modules.html
 
 ## Contributing
-Tracktion Engine is provided in JUCE module format, for bug reports and features requests, please visit the [JUCE Forum](https://forum.juce.com/) -
+Tracktion Engine is provided in JUCE module format, for bug reports and features requests, please visit the [JUCE Forum and post using the Tracktion Engine category](https://forum.juce.com/c/tracktion-engine) -
 the Tracktion Engine developers are active there and will read every post and respond accordingly.
 We don't accept third party GitHub pull requests directly due to copyright restrictions
 but if you would like to contribute any changes please contact us.
@@ -52,3 +55,30 @@ Tracktion Engine is covered by a [GPL](https://www.gnu.org/licenses/gpl-3.0.en.h
 
 There are multiple commercial licensing tiers for Tracktion Engine, with different terms for each.
 For prices, see the [Tracktion Developers Page](https://www.tracktion.com/develop/tracktion-engine).
+
+___
+The Tracktion Graph module (also used by Tracktion Engine) includes the MIT licensed [farbot library](/modules/tracktion_graph/3rd_party/farbot) which requires the following notice to be included as part of the software:
+
+```
+MIT License
+
+Copyright (c) 2019 Fabian Renn
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```

@@ -631,6 +631,13 @@ namespace IDs
     DECLARE_ID (apply)
     DECLARE_ID (oscType)
     DECLARE_ID (bandLimit)
+    DECLARE_ID (irFileData)
+    DECLARE_ID (normalise)
+    DECLARE_ID (trimSilence)
+    DECLARE_ID (preGain)
+    DECLARE_ID (postGain)
+    DECLARE_ID (highPassMidiNoteNumber)
+    DECLARE_ID (lowPassMidiNoteNumber)
 
     #undef DECLARE_ID
 }
