@@ -29,6 +29,7 @@ public:
     }
     
 private:
+    /// <#Description#>
     void runRPMallocTests()
     {
         beginTest ("rpmalloc single thread");
@@ -189,10 +190,10 @@ private:
 
                                            if (remove)
                                            {
-                                               const auto numToRemove = std::min (num, vec.size());
+                                               //const auto numToRemove = std::min (num, vec.size());
                                                
-                                               for (size_t i = 0; i < numToRemove; ++i)
-                                                   vec.pop_back();
+                                               //for (size_t i = 0; i < numToRemove; ++i)
+                                                   //vec.pop_back();
                                            }
                                            else
                                            {
