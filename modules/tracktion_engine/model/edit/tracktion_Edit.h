@@ -27,7 +27,7 @@ namespace tracktion_engine
     To create an Edit to you need construct one with an Edit::Options instance
     supplying at least the Engine to use, the ValueTree state and a ProjectItemID
     to uniquely identify this Edit.
- 
+
     This is a high level overview of the Edit structure and the relevant objects.
     Note that this isn't an exhaustive list but should help you find the most relevant classes.
     - Edit

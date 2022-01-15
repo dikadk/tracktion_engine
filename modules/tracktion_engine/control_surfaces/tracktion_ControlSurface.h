@@ -148,9 +148,10 @@ public:
     // tells the device that looping has been turned on or off.
     virtual void loopOnOffChanged (bool isLoopOn) = 0;
 
-    virtual void slaveOnOffChanged (bool isSlaving) = 0;
-    virtual void punchOnOffChanged (bool isPunching) = 0;
-    virtual void undoStatusChanged (bool, bool)         {}
+    virtual void slaveOnOffChanged ([[maybe_unused]] bool isSlaving)        {}
+    virtual void punchOnOffChanged ([[maybe_unused]] bool isPunching)       {}
+    virtual void scrollOnOffChanged ([[maybe_unused]] bool isScroll)        {}
+    virtual void undoStatusChanged (bool, bool)                             {}
 
     // tells the device that one of the parameters has been changed.
     //
@@ -197,7 +198,7 @@ public:
     void sendMidiCommandToController (const juce::MidiMessage&);
 
     template <size_t size>
-    void sendMidiArray (const juce::uint8 (&rawData)[size])   { sendMidiCommandToController (rawData, (int) size); }
+    void sendMidiArray (const uint8_t (&rawData)[size])   { sendMidiCommandToController (rawData, (int) size); }
 
     // tells tracktion that the user has moved a fader.
     // the channel number is the physical channel on the device, regardless of bank selection
@@ -259,6 +260,12 @@ public:
     void userPressedInsertPitchChange();
     void userPressedInsertTimeSigChange();
     void userToggledVideoWindow();
+    void userToggledMixerWindow (bool fullscreen);
+    void userToggledMidiEditorWindow (bool fullscreen);
+    void userToggledTrackEditorWindow();
+    void userToggledBrowserWindow();
+    void userToggledActionsWindow();
+    void userPressedUserAction (int);
     void userPressedFreeze();
 
     void userPressedClearAllSolo();

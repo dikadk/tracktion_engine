@@ -107,6 +107,7 @@ public:
     void updateMarkers();
     void updateTrackRecordLights();
     void updatePunchLights();
+    void updateScrollLights();
     void updateUndoLights();
 
     int getNumChannelTracks() const;
@@ -114,8 +115,8 @@ public:
     int mapTrackNumToChannelNum (int channelNum) const;
 
     //==============================================================================
-    int getXTCount();
-    void setXTCount (int);
+    int getXTCount (const juce::String& controller);
+    void setXTCount (const juce::String& controller, int);
     void refreshXTOrder();
 
     //==============================================================================
@@ -155,7 +156,7 @@ private:
 
     NovationAutomap* automap = nullptr;
 
-    juce::uint32 lastUpdate = 0;
+    uint32_t lastUpdate = 0;
     Edit* currentEdit = nullptr;
     SelectionManager* currentSelectionManager = nullptr;
 
