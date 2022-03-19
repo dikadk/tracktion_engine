@@ -54,6 +54,11 @@ public:
     */
     virtual void setPluginDisabled (const juce::String& /*idString*/, bool /*shouldBeDisabled*/) {}
 
+    /** Should the plugin be loaded. Normally plugins aren't loaded when Edit is for exporting
+        or examining. Override this if you always need a plugin loaded
+    */
+    virtual bool shouldLoadPlugin (ExternalPlugin& p);
+
     /** Gives the host a chance to do any extra configuration after a plugin is loaded */
     virtual void doAdditionalInitialisation (ExternalPlugin&)                       {}
 
@@ -194,6 +199,23 @@ public:
 
     /** If this returns true, it means that newly inserted clips will automatically have a fade-in and fade-out of 3ms applied. */
     virtual bool autoAddClipEdgeFades()                                             { return false; }
+    
+    
+    struct ControlSurfaces
+    {
+        bool mackieMCU = true;
+        bool mackieC4 = true;
+        bool iconProG2 = true;
+        bool tranzport = true;
+        bool alphaTrack = true;
+        bool remoteSL = true;
+        bool remoteSLCompact = true;
+        bool automap = true;
+    };
+    
+    /** Return the control surfaces you want enabled in the engine */
+    
+    virtual ControlSurfaces getDesiredControlSurfaces()                             { return {}; }
 };
 
 } // namespace tracktion_engine

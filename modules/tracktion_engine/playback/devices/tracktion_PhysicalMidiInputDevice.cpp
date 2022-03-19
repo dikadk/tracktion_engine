@@ -314,6 +314,8 @@ PhysicalMidiInputDevice::PhysicalMidiInputDevice (Engine& e, const juce::String&
    : MidiInputDevice (e, TRANS("MIDI Input"), deviceName),
      deviceIndex (deviceIndexToUse)
 {
+    enabled = true;
+
     controllerParser.reset (new MidiControllerParser (e));
     loadProps();
 }
@@ -413,9 +415,9 @@ bool PhysicalMidiInputDevice::tryToSendTimecode (const juce::MidiMessage& messag
 
 void PhysicalMidiInputDevice::handleIncomingMidiMessage (const juce::MidiMessage& m)
 {
-    if (externalController != nullptr && externalController->wantsMessage (m))
+    if (externalController != nullptr && externalController->wantsMessage (*this, m))
     {
-        externalController->acceptMidiMessage (m);
+        externalController->acceptMidiMessage (*this, m);
     }
     else
     {

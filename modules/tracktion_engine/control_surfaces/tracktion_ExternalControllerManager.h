@@ -66,6 +66,7 @@ public:
     };
 
     bool createCustomController (const juce::String& name, Protocol);
+    ExternalController* addController (ControlSurface*);
     void deleteController (ExternalController*);
 
     //==============================================================================
@@ -79,7 +80,7 @@ public:
     void playStateChanged (bool isPlaying);
     void recordStateChanged (bool isRecording);
     void automationModeChanged (bool isReading, bool isWriting);
-    void channelLevelChanged (int channel, float level);
+    void channelLevelChanged (int channel, float l, float r);
     void masterLevelsChanged (float leftLevel, float rightLevel);
     void timecodeChanged (int barsOrHours, int beatsOrMinutes, int ticksOrSeconds,
                           int millisecs, bool isBarsBeats, bool isFrames);
@@ -121,10 +122,10 @@ public:
 
     //==============================================================================
     // these are called back by the controller to make the app respond
-    void userMovedFader (int channelNum, float newSliderPos);
-    void userMovedMasterFader (Edit*, float newLevel);
+    void userMovedFader (int channelNum, float newSliderPos, bool delta);
+    void userMovedMasterFader (Edit*, float newLevel, bool delta);
     void userMovedMasterPanPot (Edit*, float newLevel);
-    void userMovedPanPot (int channelNum, float newPan);
+    void userMovedPanPot (int channelNum, float newPan, bool delta);
     void userPressedSolo (int channelNum);
     void userPressedSoloIsolate (int channelNum);
     void userPressedMute (int channelNum, bool muteVolumeControl);
