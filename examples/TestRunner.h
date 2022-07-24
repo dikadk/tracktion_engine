@@ -170,9 +170,11 @@ namespace TestRunner
         tracktion_engine::Engine engine { ProjectInfo::projectName, std::make_unique<TestUIBehaviour>(), std::make_unique<TestEngineBehaviour>() };
 
         UnitTestRunner testRunner;
-        testRunner.setAssertOnFailure (false);
+        testRunner.setAssertOnFailure (true);
 
         Array<UnitTest*> tests;
+        tests.addArray (UnitTest::getTestsInCategory ("tracktion_core"));
+        tests.addArray (UnitTest::getTestsInCategory ("tracktion_graph"));
         tests.addArray (UnitTest::getTestsInCategory ("Tracktion"));
         tests.addArray (UnitTest::getTestsInCategory ("Tracktion:Longer"));
         

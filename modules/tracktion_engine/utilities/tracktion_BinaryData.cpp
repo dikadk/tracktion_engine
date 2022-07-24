@@ -8,7 +8,7 @@
     Tracktion Engine uses a GPL/commercial licence - see LICENCE.md for details.
 */
 
-namespace tracktion_engine
+namespace tracktion { inline namespace engine
 {
 
 namespace TracktionBinaryData
@@ -24313,7 +24313,7 @@ static const unsigned char temp_binary_data_4[] =
 const char* groove_templates_2_xml = (const char*) temp_binary_data_4;
 
 
-const char* getNamedResource (const char* resourceNameUTF8, int& numBytes) throw()
+const char* getNamedResource (const char* resourceNameUTF8, int& numBytes) noexcept
 {
     unsigned int hash = 0;
     if (resourceNameUTF8 != nullptr)
@@ -24345,4 +24345,4 @@ const char* namedResourceList[] =
 
 }
 
-} // namespace tracktion_engine
+}} // namespace tracktion { inline namespace engine
