@@ -18,8 +18,8 @@ DelayPlugin::DelayPlugin (PluginCreationInfo info) : Plugin (info)
                               [] (const juce::String& s)    { return dbStringToDb (s); });
 
     length    = addParam ("length", TRANS("Length"), { 1, 1000.f },
-                              [] (float value)       { return juce::String(value)+" ms"; },
-                              [] (const String& s)   { return s.getFloatValue(); });
+                              [] (float value)       { return juce::String(value) + " ms"; },
+                              [] (const juce::String& s)   { return s.getFloatValue(); });
 
     mixProportion = addParam ("mix proportion", TRANS("Mix proportion"), { 0.0f, 1.0f },
                               [] (float value)              { return juce::String (juce::roundToInt (value * 100.0f)) + "% wet"; },
