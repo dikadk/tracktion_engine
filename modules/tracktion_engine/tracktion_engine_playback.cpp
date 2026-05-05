@@ -18,8 +18,8 @@
  #include <juce_core/system/juce_TargetPlatform.h>
 
  // Ableton Link has to be included here before ReWire as ReWire seems to mess with some Windows defs
- #if (JUCE_WINDOWS || JUCE_MAC || JUCE_LINUX || JUCE_ANDROID)
-     #if JUCE_MAC
+ #if (JUCE_WINDOWS || JUCE_MAC || JUCE_LINUX || JUCE_ANDROID || JUCE_IOS)
+     #if JUCE_MAC || JUCE_IOS
       #define LINK_PLATFORM_MACOSX  1
      #endif
 
@@ -32,7 +32,7 @@
      #endif
 
      //==========================================================================
-     // To use Link on desktop and Android, grab the open source repo from github
+     // To use Link on desktop, mobile, and Android, grab the open source repo from github
      // and add these folders to your project's header search paths:
      // [relative path from project]/AbletonLink/include
      // [relative path from project]/AbletonLink/modules/asio-standalone/asio/include
@@ -40,6 +40,10 @@
      // If you're building on Android, you will also need the ifaddrs header and source
      // from here: https://github.com/libpd/abl_link/tree/master/external/android-ifaddrs
      // Add the folder they are in to your header search paths also.
+     //
+     // If LinkAudio.hpp is on the include path (Link 4.0+), TE will use ableton::LinkAudio
+     // instead of ableton::Link so that consumers can layer the audio-bus API on top of
+     // the same instance without creating a second Link core.
 
      #if JUCE_CLANG // TODO: Ignore conversion errors on Windows too
       #pragma clang diagnostic push
@@ -53,7 +57,11 @@
      #endif
 
     #include "../3rd_party/choc/platform/choc_DisableAllWarnings.h"
-     #include <ableton/Link.hpp>
+     #if __has_include(<ableton/LinkAudio.hpp>)
+      #include <ableton/LinkAudio.hpp>
+     #else
+      #include <ableton/Link.hpp>
+     #endif
      #include <ableton/link/HostTimeFilter.hpp>
     #include "../3rd_party/choc/platform/choc_ReenableAllWarnings.h"
 

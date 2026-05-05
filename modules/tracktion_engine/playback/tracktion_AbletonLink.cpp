@@ -211,12 +211,32 @@ struct AbletonLink::ImplBase  : public juce::Timer
 
 #if TRACKTION_ENABLE_ABLETON_LINK
 
-#if (JUCE_WINDOWS || JUCE_MAC || JUCE_LINUX || JUCE_ANDROID)
+#if (JUCE_WINDOWS || JUCE_MAC || JUCE_LINUX || JUCE_ANDROID || JUCE_IOS)
+
+   #if TRACKTION_HAS_LINK_AUDIO
+    using TracktionLinkType = ableton::LinkAudio;
+
+    static std::string makeDefaultLinkPeerName (TransportControl& t)
+    {
+        const auto editName = t.edit.getName();
+
+        if (editName.isNotEmpty())
+            return editName.toStdString();
+
+        return t.edit.engine.getPropertyStorage().getApplicationName().toStdString();
+    }
+   #else
+    using TracktionLinkType = ableton::Link;
+   #endif
+
     //==========================================================================
     struct LinkImpl  : public AbletonLink::ImplBase
     {
         LinkImpl (TransportControl& t)
             : AbletonLink::ImplBase (t)
+           #if TRACKTION_HAS_LINK_AUDIO
+            , link { 120.0, makeDefaultLinkPeerName (t) }
+           #endif
         {
             link.setNumPeersCallback ([this] (std::size_t n) { numPeersCallback (n); });
             link.setTempoCallback ([this] (double bpm) { setTempoFromLink (bpm); });
@@ -313,156 +333,17 @@ struct AbletonLink::ImplBase  : public juce::Timer
         }
 
         ableton::Link::Clock clock;
-        ableton::Link link { 120 };
+       #if TRACKTION_HAS_LINK_AUDIO
+        TracktionLinkType link;          // initialised in member-initialiser list with peer name
+       #else
+        TracktionLinkType link { 120 };
+       #endif
     };
 
-#elif JUCE_IOS
-
-    // To use Link on iOS you need to get access to the LinkKit repo from
-    // Ableton, add its include folder to your header search paths, and link to
-    // the libABLLink.a static library.
-    #include "ABLLink.h"
-
-    struct LinkImpl  : public AbletonLink::ImplBase
-    {
-        LinkImpl (TransportControl& t)
-            : AbletonLink::ImplBase (t),
-              link (ABLLinkNew (120))
-        {
-            ABLLinkSetSessionTempoCallback (link, tempoChangedCallback, this);
-            ABLLinkSetIsConnectedCallback (link, isConnectedCallback, this);
-            ABLLinkSetIsEnabledCallback (link, isEnabledCallback, this);
-            ABLLinkSetStartStopCallback (link, startStopCallback, this);
-
-            setEnabled (isActive);
-        }
-
-        ~LinkImpl() override
-        {
-             ABLLinkDelete (link);
-        }
-
-        bool isEnabled() const override
-        {
-            TRACKTION_ASSERT_MESSAGE_THREAD
-            return ABLLinkIsEnabled (link) && isActive;
-        }
-
-        void setEnabled (bool isEnabled) override
-        {
-            TRACKTION_ASSERT_MESSAGE_THREAD
-            isActive = isEnabled;
-            ABLLinkSetActive (link, isEnabled);
-
-            // We don't necessarily get an isConnectedCallback callback after
-            // enabling, make sure everything is up to date.
-            Timer::callAfterDelay (500, [this, editRef = makeSafeRef (transport.edit)]
-            {
-                if (editRef != nullptr)
-                    isConnectedCallback (ABLLinkIsConnected (link), this);
-            });
-        }
-
-        bool isPlaying() const override
-        {
-            TRACKTION_ASSERT_MESSAGE_THREAD
-            return ABLLinkIsPlaying (ABLLinkCaptureAppSessionState (link));
-        }
-
-        void enableStartStopSync (bool) override
-        {
-            jassertfalse; // This is only settable via the system prefs
-        }
-
-        bool getStartStopSyncEnabledFromLink() const override
-        {
-            TRACKTION_ASSERT_MESSAGE_THREAD
-            return ABLLinkIsStartStopSyncEnabled (link);
-        }
-
-        void setStartStopToLink (bool isPlaying) override
-        {
-            TRACKTION_ASSERT_MESSAGE_THREAD
-            auto state = ABLLinkCaptureAppSessionState (link);
-            ABLLinkSetIsPlaying (state, isPlaying, (std::uint64_t) juce::Time::getHighResolutionTicks());
-            ABLLinkCommitAppSessionState (link, state);
-        }
-
-        void setTempoToLink (double bpm) override
-        {
-            TRACKTION_ASSERT_MESSAGE_THREAD
-            auto state = ABLLinkCaptureAppSessionState (link);
-            ABLLinkSetTempo (state, bpm, (std::uint64_t) juce::Time::getHighResolutionTicks());
-            ABLLinkCommitAppSessionState (link, state);
-        }
-
-        double getTempoFromLink() override
-        {
-            jassert (! juce::MessageManager::existsAndIsCurrentThread());
-            return ABLLinkGetTempo (ABLLinkCaptureAudioSessionState (link));
-        }
-
-        double getBeatNow (double quantum) override
-        {
-            jassert (! juce::MessageManager::existsAndIsCurrentThread());
-            auto state = ABLLinkCaptureAudioSessionState (link);
-            return ABLLinkBeatAtTime (state, (std::uint64_t) juce::Time::getHighResolutionTicks(), quantum);
-        }
-
-        double getBarPhase (double quantum) override
-        {
-            auto state = juce::MessageManager::existsAndIsCurrentThread()
-                            ? ABLLinkCaptureAppSessionState (link)
-                            : ABLLinkCaptureAudioSessionState (link);
-
-            return ABLLinkPhaseAtTime (state, (std::uint64_t) juce::Time::getHighResolutionTicks(), quantum);
-        }
-
-        static void tempoChangedCallback (double bpm, void *context)
-        {
-            auto* thisPtr = static_cast<LinkImpl*> (context);
-            thisPtr->setTempoFromLink (bpm);
-        }
-
-        static void isConnectedCallback (bool isConnected, void *context)
-        {
-            auto* thisPtr = static_cast<LinkImpl*> (context);
-
-            thisPtr->numPeers = (size_t) (isConnected ? 1 : 0);
-            thisPtr->activateTimer (isConnected);
-
-            isEnabledCallback (isConnected, context);
-        }
-
-        static void isEnabledCallback (bool isEnabled, void *context)
-        {
-            auto* thisPtr = static_cast<LinkImpl*> (context);
-
-            if (! isEnabled)
-                thisPtr->numPeers = (size_t) 0;
-
-            thisPtr->callConnectionChanged();
-
-            if (isEnabled)
-                broadcastTempo (thisPtr);
-        }
-
-        static void startStopCallback (bool isPlaying, void *context)
-        {
-            auto* thisPtr = static_cast<LinkImpl*> (context);
-            thisPtr->setStartStopFromLink (isPlaying);
-        }
-
-        static void broadcastTempo (LinkImpl* context)
-        {
-            context->setTempoFromLink (context->getTempoFromLink());
-        }
-
-        ABLLinkRef link;
-        static bool isActive; // Multiple edits may exist, Link is global
-    };
-
-    bool LinkImpl::isActive = true;
+    // (Legacy iOS LinkKit branch removed: iOS now uses the same ableton::Link / ableton::LinkAudio
+    //  C++ path as the rest of desktop & mobile. Re-enabling LinkKit requires reverting the
+    //  `JUCE_IOS` addition to the platform guard above and restoring the `#elif JUCE_IOS` block
+    //  from upstream history.)
 
 #endif
 #endif // TRACKTION_ENABLE_ABLETON_LINK
@@ -480,8 +361,14 @@ AbletonLink::AbletonLink (TransportControl& t)
 
 AbletonLink::~AbletonLink() {}
 
-#if TRACKTION_ENABLE_ABLETON_LINK && JUCE_IOS
- ABLLink* AbletonLink::getLinkInstanceForIOS()  { return static_cast<LinkImpl*>(implementation.get())->link; }
+#if TRACKTION_HAS_LINK_AUDIO
+ ableton::LinkAudio* AbletonLink::getLinkAudio() noexcept
+ {
+     if (implementation == nullptr)
+         return nullptr;
+
+     return &static_cast<LinkImpl*> (implementation.get())->link;
+ }
 #endif
 
 void AbletonLink::setEnabled (bool isEnabled)

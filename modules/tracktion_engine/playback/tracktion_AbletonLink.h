@@ -8,8 +8,11 @@
     Tracktion Engine uses a GPL/commercial licence - see LICENCE.md for details.
 */
 
-#if TRACKTION_ENABLE_ABLETON_LINK && JUCE_IOS
- struct ABLLink;
+#if TRACKTION_ENABLE_ABLETON_LINK && __has_include(<ableton/LinkAudio.hpp>)
+ #define TRACKTION_HAS_LINK_AUDIO 1
+ namespace ableton { class LinkAudio; }
+#else
+ #define TRACKTION_HAS_LINK_AUDIO 0
 #endif
 
 namespace tracktion { inline namespace engine
@@ -31,15 +34,17 @@ public:
     /** Destructor. */
     ~AbletonLink();
 
-    /** On iOS you need this to instantiate an ABLLinkSettingsViewController. */
-   #if TRACKTION_ENABLE_ABLETON_LINK && JUCE_IOS
-    ABLLink* getLinkInstanceForIOS();
+    /** Returns the underlying ableton::LinkAudio instance, or nullptr if Link 4.0
+        headers were not present at build time (LINK_AUDIO undefined).
+        Allows external consumers (e.g. an audio-bus / channel-streaming layer) to share
+        the same Link core that TE owns instead of constructing a second instance.
+        @see ld::LinkAudioBus::attach
+    */
+   #if TRACKTION_HAS_LINK_AUDIO
+    ableton::LinkAudio* getLinkAudio() noexcept;
    #endif
 
-    /** Enable Link. On platforms other than iOS, Link connects automatically
-        once this is set. On iOS the user must additionally switch Link on using
-        the ABLLinkSettingsViewController. Off by default on desktop, on by default on iOS.
-    */
+    /** Enable Link. Link connects automatically once this is set. Off by default. */
     void setEnabled (bool isEnabled);
 
     /** Is Link enabled? It may not be connected to any peers even if it is. */
