@@ -18,8 +18,10 @@
  #include <juce_core/system/juce_TargetPlatform.h>
 
  // Ableton Link has to be included here before ReWire as ReWire seems to mess with some Windows defs
- #if (JUCE_WINDOWS || JUCE_MAC || JUCE_LINUX || JUCE_ANDROID || JUCE_IOS)
-     #if JUCE_MAC || JUCE_IOS
+ // iOS uses Ableton's LinkKit (proprietary static lib with C ABLLink API) instead of the
+ // open-source C++ Link, so the C++ headers are intentionally not pulled in on iOS.
+ #if (JUCE_WINDOWS || JUCE_MAC || JUCE_LINUX || JUCE_ANDROID)
+     #if JUCE_MAC
       #define LINK_PLATFORM_MACOSX  1
      #endif
 

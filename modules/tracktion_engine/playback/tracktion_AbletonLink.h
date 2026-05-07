@@ -15,6 +15,13 @@
  #define TRACKTION_HAS_LINK_AUDIO 0
 #endif
 
+#if TRACKTION_ENABLE_ABLETON_LINK && JUCE_IOS
+ // Opaque LinkKit handle (defined in <ABLLink.h>); declared here in the global
+ // namespace so getLinkInstanceForIOS() returns the same type that LinkKit's
+ // ABLLinkRef typedefs to.
+ struct ABLLink;
+#endif
+
 namespace tracktion { inline namespace engine
 {
 
@@ -42,6 +49,14 @@ public:
     */
    #if TRACKTION_HAS_LINK_AUDIO
     ableton::LinkAudio* getLinkAudio() noexcept;
+   #endif
+
+   #if TRACKTION_ENABLE_ABLETON_LINK && JUCE_IOS
+    /** Returns the underlying ABLLink (LinkKit) handle on iOS. Lets iOS-only consumers
+        (e.g. ABLLinkSettingsViewController) plug into the same Link core that TE owns.
+        Available only on iOS where TE uses LinkKit instead of the C++ Link library.
+    */
+    ::ABLLink* getLinkInstanceForIOS() noexcept;
    #endif
 
     /** Enable Link. Link connects automatically once this is set. Off by default. */
