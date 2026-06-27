@@ -8,7 +8,7 @@
     Tracktion Engine uses a GPL/commercial licence - see LICENCE.md for details.
 */
 
-#if TRACKTION_ENABLE_ABLETON_LINK && __has_include(<ableton/LinkAudio.hpp>)
+#if TRACKTION_ENABLE_ABLETON_LINK && !JUCE_IOS && __has_include(<ableton/LinkAudio.hpp>)
  #define TRACKTION_HAS_LINK_AUDIO 1
  namespace ableton { class LinkAudio; }
 #else
