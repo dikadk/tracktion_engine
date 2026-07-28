@@ -14,16 +14,20 @@
  #define TRACKTION_ARM 1
 #endif
 
+#if defined (__EMSCRIPTEN__)
+ #define TRACKTION_WASM 1
+#endif
+
 #ifdef _WIN32
  #include <intrin.h>
-#elif TRACKTION_ARM
- // Use clang built-in
+#elif TRACKTION_ARM || TRACKTION_WASM
+ // No x86 intrinsics on ARM or WASM
 #else
  #include <x86intrin.h>
 #endif
 
-#if TRACKTION_ARM
- // Use asm yield
+#if TRACKTION_ARM || TRACKTION_WASM
+ // No SSE pause on ARM or WASM
 #elif __has_include(<emmintrin.h>)
  #include <emmintrin.h>
 #endif
@@ -34,7 +38,9 @@ namespace tracktion { inline namespace core
 /** Returns the CPU cycle count, useful for benchmarking. */
 inline std::uint64_t rdtsc()
 {
-   #if TRACKTION_ARM && ! defined (_MSC_VER)
+   #if TRACKTION_WASM
+    return 0;
+   #elif TRACKTION_ARM && ! defined (_MSC_VER)
     std::uint64_t result;
     __asm __volatile("mrs %0, CNTVCT_EL0" : "=&r" (result));
     return result;
@@ -45,7 +51,6 @@ inline std::uint64_t rdtsc()
      return __rdtsc();
     #endif
    #elif TRACKTION_ARM
-    // TODO - supposed to use __rdpmccntr64(), but it doesn't work and no idea why...
     return 0;
    #else
     return __rdtsc();
@@ -57,7 +62,9 @@ inline std::uint64_t rdtsc()
 */
 inline void pause()
 {
-   #if TRACKTION_ARM && ! defined (_MSC_VER)
+   #if TRACKTION_WASM
+    // No-op on WASM — single-threaded, no spin-wait needed
+   #elif TRACKTION_ARM && ! defined (_MSC_VER)
     __asm__ __volatile__ ("yield");
    #elif TRACKTION_ARM
     __yield();

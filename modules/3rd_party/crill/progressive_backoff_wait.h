@@ -33,12 +33,10 @@ void progressive_backoff_wait(Predicate&& pred)
 {
   #if CRILL_INTEL
     impl::progressive_backoff_wait_intel<5, 10, 3000>(std::forward<Predicate>(pred));
-    // approx. 5x5 ns (= 25 ns), 10x40 ns (= 400 ns), and 3000x350 ns (~ 1 ms),
-    // respectively, when measured on a 2.9 GHz Intel i9
   #elif CRILL_ARM_64BIT
     impl::progressive_backoff_wait_armv8<2, 750>(std::forward<Predicate>(pred));
-    // approx. 2x10 ns (= 20 ns) and 750x1333 ns (~ 1 ms), respectively, on an
-    // Apple Silicon Mac or an armv8 based phone.
+  #elif defined(__EMSCRIPTEN__)
+    while (!pred()) { /* spin — WASM is single-threaded so this should resolve quickly */ }
   #else
     #error "Platform not supported!"
   #endif
