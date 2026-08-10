@@ -674,6 +674,9 @@ void DeviceManager::broadcastMessageToAllVirtualDevices (PhysicalMidiInputDevice
 
 bool DeviceManager::usesHardwareMidiDevices()
 {
+    if (! engine.getEngineBehaviour().useHardwareMidiDevices())
+        return false;
+
     return hostedAudioDeviceInterface == nullptr
             || hostedAudioDeviceInterface->parameters.useMidiDevices;
 }

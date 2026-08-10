@@ -123,6 +123,9 @@ public:
     virtual bool isMidiDriverUsedForIncommingMessageTiming()                        { return true; }
     virtual void setMidiDriverUsedForIncommingMessageTiming (bool)                  {}
 
+    /// If false, hardware MIDI devices won't be scanned or exposed to the engine.
+    virtual bool useHardwareMidiDevices()                                           { return true; }
+
     virtual bool shouldPlayMidiGuideNotes()                                         { return false; }
 
     virtual int getNumberOfCPUsToUseForAudio()                                      { return juce::jmax (1, juce::SystemStats::getNumCpus()); }
