@@ -690,7 +690,13 @@ static int32_t _huge_pages_peak;
 //////
 
 //! Current thread heap
-#if (defined(__APPLE__) || defined(__HAIKU__)) && ENABLE_PRELOAD
+#if defined(__ANDROID__) || ((defined(__APPLE__) || defined(__HAIKU__)) && ENABLE_PRELOAD)
+#define RPMALLOC_USE_PTHREAD_KEY 1
+#else
+#define RPMALLOC_USE_PTHREAD_KEY 0
+#endif
+
+#if RPMALLOC_USE_PTHREAD_KEY
 static pthread_key_t _memory_thread_heap;
 #else
 #  ifdef _MSC_VER
@@ -715,8 +721,8 @@ static _Thread_local heap_t* _memory_thread_heap TLS_MODEL;
 
 static inline heap_t*
 get_thread_heap_raw(void) {
-#if (defined(__APPLE__) || defined(__HAIKU__)) && ENABLE_PRELOAD
-	return pthread_getspecific(_memory_thread_heap);
+#if RPMALLOC_USE_PTHREAD_KEY
+	return (heap_t*)pthread_getspecific(_memory_thread_heap);
 #else
 	return _memory_thread_heap;
 #endif
@@ -772,7 +778,7 @@ get_thread_id(void) {
 //! Set the current thread heap
 static void
 set_thread_heap(heap_t* heap) {
-#if (defined(__APPLE__) || defined(__HAIKU__)) && ENABLE_PRELOAD
+#if RPMALLOC_USE_PTHREAD_KEY
 	pthread_setspecific(_memory_thread_heap, heap);
 #else
 	_memory_thread_heap = heap;
@@ -2728,7 +2734,7 @@ rpmalloc_initialize_config(const rpmalloc_config_t* config) {
 	_memory_span_release_count = (_memory_span_map_count > 4 ? ((_memory_span_map_count < 64) ? _memory_span_map_count : 64) : 4);
 	_memory_span_release_count_large = (_memory_span_release_count > 8 ? (_memory_span_release_count / 4) : 2);
 
-#if (defined(__APPLE__) || defined(__HAIKU__)) && ENABLE_PRELOAD
+#if RPMALLOC_USE_PTHREAD_KEY
 	if (pthread_key_create(&_memory_thread_heap, _rpmalloc_heap_release_raw))
 		return -1;
 #endif
@@ -2800,7 +2806,7 @@ rpmalloc_finalize(void) {
 		_rpmalloc_global_cache_finalize(&_memory_span_cache[iclass]);
 #endif
 
-#if (defined(__APPLE__) || defined(__HAIKU__)) && ENABLE_PRELOAD
+#if RPMALLOC_USE_PTHREAD_KEY
 	pthread_key_delete(_memory_thread_heap);
 #endif
 #if defined(_WIN32) && (!defined(BUILD_DYNAMIC_LINK) || !BUILD_DYNAMIC_LINK)
