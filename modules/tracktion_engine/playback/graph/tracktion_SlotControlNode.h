@@ -23,6 +23,9 @@ class SlotControlNode final : public tracktion::graph::Node,
 public:
     SlotControlNode (ProcessState& editProcessState,
                      std::shared_ptr<LaunchHandle>,
+                     Clip::Ptr,
+                     bool clipLoops,
+                     std::optional<BeatDuration> naturalOneShotDuration,
                      std::optional<BeatDuration> stopDuration,
                      std::function<void (MonotonicBeat)> stopFunction,
                      EditItemID slotID,
@@ -43,6 +46,9 @@ public:
 private:
     //==============================================================================
     std::shared_ptr<LaunchHandle> launchHandle;
+    Clip::Ptr clip;
+    const bool clipLoops;
+    std::optional<BeatDuration> naturalOneShotDuration;
     std::optional<BeatDuration> stopDuration;
     std::function<void (MonotonicBeat)> stopFunction;
     bool wasPlaying = false;

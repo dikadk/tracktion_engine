@@ -60,6 +60,9 @@ public:
     /** Stop playing, optionally at a given beat position. */
     void stop (std::optional<MonotonicBeat>);
 
+    /** Clears a pending launch/stop without changing the current play state. */
+    void cancelQueuedEvent();
+
     /** Starts playing, as if it was started at the same time as the given LaunchHandle.
         This can optionally be delayed by supplying a MonotonicBeat to start at.
     */

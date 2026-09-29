@@ -928,14 +928,33 @@ void DeviceManager::loadSettings()
         else
         {
             auto audioXml = storage.getXmlProperty (SettingID::audio_device_setup);
+            const auto preferredBufferSize = engine.getEngineBehaviour().getPreferredAudioDeviceBufferSize();
 
             if (audioXml != nullptr)
+            {
+                if (preferredBufferSize > 0 && audioXml->getIntAttribute ("audioDeviceBufferSize", 0) <= 0)
+                    audioXml->setAttribute ("audioDeviceBufferSize", preferredBufferSize);
+
                 error = deviceManager.initialise (defaultNumInputChannelsToOpen,
                                                   defaultNumOutputChannelsToOpen,
                                                   audioXml.get(), true);
+            }
             else
-                error = deviceManager.initialiseWithDefaultDevices (defaultNumInputChannelsToOpen,
-                                                                    defaultNumOutputChannelsToOpen);
+            {
+                if (preferredBufferSize > 0)
+                {
+                    juce::AudioDeviceManager::AudioDeviceSetup preferredSetup;
+                    preferredSetup.bufferSize = preferredBufferSize;
+                    error = deviceManager.initialise (defaultNumInputChannelsToOpen,
+                                                      defaultNumOutputChannelsToOpen,
+                                                      nullptr, false, {}, &preferredSetup);
+                }
+                else
+                {
+                    error = deviceManager.initialiseWithDefaultDevices (defaultNumInputChannelsToOpen,
+                                                                        defaultNumOutputChannelsToOpen);
+                }
+            }
         }
 
         if (error.isNotEmpty())
@@ -1646,7 +1665,9 @@ void DeviceManager::prepareToStart()
         currentSampleRate = device->getCurrentSampleRate();
         jassert (currentSampleRate > 0.0);
         currentLatencyMs  = maxBlockSize * 1000.0f / currentSampleRate;
-        outputLatencyTime = device->getOutputLatencyInSamples() / currentSampleRate;
+        outputLatencyTime = engine.getEngineBehaviour().shouldQueryDeviceOutputLatency()
+                          ? device->getOutputLatencyInSamples() / currentSampleRate
+                          : maxBlockSize / currentSampleRate;
         defaultWaveOutID = engine.getPropertyStorage().getPropertyItem (SettingID::defaultWaveOutDevice, device->getTypeName(), defaultWaveOutID);
         defaultWaveInID  = engine.getPropertyStorage().getPropertyItem (SettingID::defaultWaveInDevice, device->getTypeName(), defaultWaveInID);
 

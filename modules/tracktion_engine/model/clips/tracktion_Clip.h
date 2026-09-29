@@ -8,6 +8,8 @@
     Tracktion Engine uses a GPL/commercial licence - see LICENCE.md for details.
 */
 
+#include <atomic>
+
 namespace tracktion { inline namespace engine
 {
 
@@ -146,6 +148,18 @@ public:
         trigger starting/stopping the clip.
     */
     virtual std::shared_ptr<LaunchHandle> getLaunchHandle()     { return {}; }
+
+    /** Runtime-only launcher control used by Samurai song playback. This flag is
+        deliberately not stored in the Clip ValueTree. */
+    void setSongPlaybackFollowActionsSuppressed (bool shouldSuppress) noexcept
+    {
+        songPlaybackFollowActionsSuppressed.store (shouldSuppress, std::memory_order_relaxed);
+    }
+
+    bool areSongPlaybackFollowActionsSuppressed() const noexcept
+    {
+        return songPlaybackFollowActionsSuppressed.load (std::memory_order_relaxed);
+    }
 
     /** Some clip types can be launched, if that's possible, this sets whether the
         clip's quantisation or the global quantisation should be used.
@@ -479,6 +493,7 @@ protected:
     AsyncCaller updateLinkedClipsCaller;
 
     juce::ListenerList<Listener> listeners;
+    std::atomic<bool> songPlaybackFollowActionsSuppressed { false };
 
     /** Sets a new source file for this clip. */
     void setCurrentSourceFile (const juce::File&);

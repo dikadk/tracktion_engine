@@ -68,6 +68,13 @@ public:
     // the processing will be muted to keep the system running. Defaults to 0.98
     void setCpuLimitBeforeMuting (double newLimit)      { jassert (newLimit > 0); cpuLimitBeforeMuting = newLimit; }
 
+   #if JUCE_ANDROID
+    /** Sets artificial callback load used to keep Android CPUs awake (default 0.8).
+        Call before initialising the audio device. Zero disables artificial load.
+    */
+    void setAndroidAudioCallbackLoadLevel (float level) { steadyLoadContext.setLoadLevel (level); }
+   #endif
+
     PerformanceMeasurement::Statistics getCPUStatistics() const;
     void restCPUStatistics();
 

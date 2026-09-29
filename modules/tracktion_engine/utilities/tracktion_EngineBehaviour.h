@@ -83,6 +83,14 @@ public:
     /// are using the engine in a plugin.
     virtual bool autoInitialiseDeviceManager()                                      { return true; }
 
+    /// Some platforms can block while querying hardware output latency. Hosts that
+    /// need to avoid that synchronous query can use a one-block estimate instead.
+    virtual bool shouldQueryDeviceOutputLatency()                                  { return true; }
+
+    /// Return a preferred device buffer size when opening the system default device
+    /// for the first time. Zero keeps JUCE's default selection.
+    virtual int getPreferredAudioDeviceBufferSize()                                 { return 0; }
+
     /// In plugin builds, you might want to avoid adding the system audio devices
     /// and only use the host inputs.
     virtual bool addSystemAudioIODeviceTypes()                                      { return true; }

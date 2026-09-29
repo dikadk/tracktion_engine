@@ -15,12 +15,18 @@ namespace tracktion { inline namespace engine
 
 SlotControlNode::SlotControlNode (ProcessState& ps,
                                   std::shared_ptr<LaunchHandle> launchHandle_,
+                                  Clip::Ptr clip_,
+                                  bool clipLoops_,
+                                  std::optional<BeatDuration> naturalOneShotDuration_,
                                   std::optional<BeatDuration> stopDuration_,
                                   std::function<void (MonotonicBeat)> stopFunction_,
                                   EditItemID slotID_,
                                   std::unique_ptr<Node> input_)
     : TracktionEngineNode (ps),
       launchHandle (std::move (launchHandle_)),
+      clip (std::move (clip_)),
+      clipLoops (clipLoops_),
+      naturalOneShotDuration (naturalOneShotDuration_),
       stopDuration (stopDuration_),
       stopFunction (std::move (stopFunction_)),
       slotID (slotID_),
@@ -124,23 +130,37 @@ void SlotControlNode::process (ProcessContext& pc)
     }
 
     const auto syncRange = getProcessState().getSyncRange();
+    const bool songMode = clip && clip->areSongPlaybackFollowActionsSuppressed();
+    const auto effectiveStopDuration = songMode
+                                           ? (clipLoops ? std::optional<BeatDuration> {}
+                                                        : naturalOneShotDuration)
+                                           : stopDuration;
 
     if (const auto editBeatRange = getEditBeatRange(); ! editBeatRange.isEmpty())
     {
-        if (stopDuration)
+        if (effectiveStopDuration)
         {
             if (auto playedMonotonicRange = launchHandle->getPlayedMonotonicRange())
             {
                 const auto blockRange = MonotonicBeatRange { { syncRange.start.monotonicBeat.v, syncRange.end.monotonicBeat.v } };
-                const auto stopPoint = MonotonicBeat { playedMonotonicRange->v.getStart() + *stopDuration };
+                const auto stopPoint = MonotonicBeat { playedMonotonicRange->v.getStart() + *effectiveStopDuration };
 
                 if (blockRange.v.contains (stopPoint.v))
                 {
                     const auto stopQueued = launchHandle->getQueuedStatus() == LaunchHandle::QueueState::stopQueued;
-                    launchHandle->stop (stopPoint);
+                    const auto repeatQueued = songMode
+                                            && launchHandle->getQueuedStatus() == LaunchHandle::QueueState::playQueued;
+
+                    // Song playback may have queued a repeat before this one-shot
+                    // reaches its natural end. LaunchHandle has one pending state,
+                    // so a natural stop here would overwrite that future play.
+                    // processSplitSection gates the rendered output at stopPoint
+                    // while leaving the queued launch intact.
+                    if (! repeatQueued)
+                        launchHandle->stop (stopPoint);
 
                     // If there was a stop already queued, ignore the follow action
-                    if (! stopQueued && stopFunction)
+                    if (! songMode && ! stopQueued && stopFunction)
                         stopFunction (stopPoint);
                 }
             }
@@ -152,16 +172,35 @@ void SlotControlNode::process (ProcessContext& pc)
             // If we've just started playing, we need to check if we should have actually stopped and just cancel if so
             if (auto playedMonotonicRange = launchHandle->getPlayedMonotonicRange();
                 playedMonotonicRange
-                && stopDuration
+                && effectiveStopDuration
                 && splitStatus.isSplit
                 && ! splitStatus.playing1 && splitStatus.playing2)
             {
                 const auto blockRange = MonotonicBeatRange { { syncRange.start.monotonicBeat.v, syncRange.end.monotonicBeat.v } };
-                const auto stopPoint = MonotonicBeat { playedMonotonicRange->v.getStart() + *stopDuration };
+                const auto stopPoint = MonotonicBeat { playedMonotonicRange->v.getStart() + *effectiveStopDuration };
 
                 if (stopPoint.v <= blockRange.v.getEnd())
-                    return launchHandle->stop ({});
+                {
+                    if (! songMode)
+                        return launchHandle->stop ({});
+                }
             }
+
+            // A Song one-shot can start and end inside this same block, before
+            // the pre-advance check had a played range to measure. Queue its
+            // stop after advance, but only if it will not replace a future play.
+            if (songMode && effectiveStopDuration)
+                if (auto playedMonotonicRange = launchHandle->getPlayedMonotonicRange())
+                {
+                    const auto blockRange = MonotonicBeatRange { { syncRange.start.monotonicBeat.v, syncRange.end.monotonicBeat.v } };
+                    const auto stopPoint = MonotonicBeat { playedMonotonicRange->v.getStart() + *effectiveStopDuration };
+                    const auto queuedState = launchHandle->getQueuedStatus();
+
+                    if (stopPoint.v <= blockRange.v.getEnd()
+                        && queuedState != LaunchHandle::QueueState::playQueued
+                        && queuedState != LaunchHandle::QueueState::stopQueued)
+                        launchHandle->stop (stopPoint);
+                }
 
             processSplitSection (pc, splitStatus);
         }
@@ -181,7 +220,14 @@ void SlotControlNode::processSplitSection (ProcessContext& pc, LaunchHandle::Spl
     const juce::NormalisableRange blockRangeBeats (totalRange.getStart().inBeats(),
                                                    totalRange.getEnd().inBeats());
 
-    auto processSubSection = [this, &pc, &blockRangeBeats, editBeatRange = getEditBeatRange(), editTimeRange = getEditTimeRange()] (auto section, bool isPlaying, auto playStartTime)
+    const bool gateSongOneShot = clip
+                              && ! clipLoops
+                              && clip->areSongPlaybackFollowActionsSuppressed()
+                              && naturalOneShotDuration.has_value();
+
+    auto processPart = [this, &pc, &blockRangeBeats, editBeatRange = getEditBeatRange(), editTimeRange = getEditTimeRange()] (BeatRange section,
+                                                                                                                              bool isPlaying,
+                                                                                                                              std::optional<BeatPosition> playStartTime)
     {
         const auto proportion = juce::Range (blockRangeBeats.convertTo0to1 (section.getStart().inBeats()),
                                              blockRangeBeats.convertTo0to1 (section.getEnd().inBeats()));
@@ -210,6 +256,32 @@ void SlotControlNode::processSplitSection (ProcessContext& pc, LaunchHandle::Spl
         const auto startTime  = editTimeRange.getStart() + editTimeRange.getLength() * proportion.getStart();
         const auto endTime    = editTimeRange.getStart() + editTimeRange.getLength() * proportion.getEnd();
         processSection (subSection, { startBeat, endBeat }, { startTime, endTime }, section, isPlaying, playStartTime);
+    };
+
+    auto processSubSection = [this, &processPart, gateSongOneShot] (auto section, bool isPlaying, auto playStartTime)
+    {
+        if (! gateSongOneShot || ! isPlaying || ! playStartTime)
+        {
+            processPart (section, isPlaying, playStartTime);
+            return;
+        }
+
+        const auto naturalEnd = *playStartTime + *naturalOneShotDuration;
+
+        if (section.getStart() >= naturalEnd)
+        {
+            processPart (section, false, std::nullopt);
+            return;
+        }
+
+        if (section.getEnd() > naturalEnd)
+        {
+            processPart ({ section.getStart(), naturalEnd }, true, playStartTime);
+            processPart ({ naturalEnd, section.getEnd() }, false, std::nullopt);
+            return;
+        }
+
+        processPart (section, true, playStartTime);
     };
 
     if (status.isSplit)

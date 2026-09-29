@@ -82,6 +82,12 @@ void LaunchHandle::stop (std::optional<MonotonicBeat> pos)
     pushNextState (QueueState::stopQueued, pos);
 }
 
+void LaunchHandle::cancelQueuedEvent()
+{
+    const std::scoped_lock sl (nextStateMutex);
+    nextState = std::nullopt;
+}
+
 std::optional<BeatRange> LaunchHandle::getPlayedRange() const
 {
     if (auto c = currentState.load())

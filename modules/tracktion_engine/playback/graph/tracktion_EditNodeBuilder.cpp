@@ -998,6 +998,12 @@ std::vector<std::unique_ptr<SlotControlNode>> createNodeForLauncherClips (const 
 
                 auto controlNode = std::make_unique<SlotControlNode> (params.processState,
                                                                       std::move (launchHandle),
+                                                                      clip,
+                                                                      clip->isLooping(),
+                                                                      clip->isLooping()
+                                                                          ? std::optional<BeatDuration> {}
+                                                                          : std::optional<BeatDuration> {
+                                                                                clip->getLengthInBeats() - clip->getOffsetInBeats() },
                                                                       clipDuration,
                                                                       createFollowAction (*clip),
                                                                       slot->itemID,
