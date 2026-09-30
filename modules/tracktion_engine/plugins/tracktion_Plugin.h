@@ -216,6 +216,27 @@ public:
     void applyToBufferWithAutomation (const PluginRenderContext&);
 
     //==============================================================================
+    /** [Mrpbm patch: plugin signal tap] Sees a plugin's audio on the audio thread, just
+        before and just after applyToBuffer(), on every path of applyToBufferWithAutomation().
+        Implementations must be real-time safe: no allocation, locks or logging.
+    */
+    struct SignalTap
+    {
+        virtual ~SignalTap() = default;
+        virtual void pluginInput (const juce::AudioBuffer<float>&, int startSample, int numSamples) noexcept = 0;
+        virtual void pluginOutput (const juce::AudioBuffer<float>&, int startSample, int numSamples) noexcept = 0;
+    };
+
+    /** Attaches a tap for the rest of this plugin's life. Call on the message thread, once:
+        the plugin owns the tap and never removes it, so the audio thread can't see it dangle.
+        A second call is ignored and returns false.
+    */
+    bool setSignalTap (std::unique_ptr<SignalTap>);
+
+    /** Returns the attached tap, or nullptr. */
+    SignalTap* getSignalTap() const noexcept     { return signalTap.load (std::memory_order_acquire); }
+
+    //==============================================================================
     /** Plugins can return false if they want to avoid the overhead of measuring the CPU usage.
         It's a small overhead but with many tracks, the level meters and vol/pan plugins can make a difference.
     */
@@ -447,6 +468,9 @@ private:
     struct WireList;
     std::unique_ptr<WireList> sidechainWireList;
     std::atomic<bool> isInitialisingFlag { false };
+
+    std::unique_ptr<SignalTap> signalTapOwner;
+    std::atomic<SignalTap*> signalTap { nullptr };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Plugin)
 };

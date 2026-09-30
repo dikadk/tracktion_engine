@@ -36,6 +36,7 @@ void ChorusPlugin::initialise (const PluginInitialisationInfo& info)
     delayBuffer.ensureMaxBufferSize (bufferSizeSamples);
     delayBuffer.clearBuffer();
     phase = 0.0f;
+    lfoPhase.store (0.0f, std::memory_order_relaxed);
 }
 
 void ChorusPlugin::deinitialise()
@@ -113,6 +114,8 @@ void ChorusPlugin::applyToBuffer (const PluginRenderContext& fc)
     phase = ph;
     if (phase >= juce::MathConstants<float>::pi * 2)
         phase -= juce::MathConstants<float>::pi * 2;
+
+    lfoPhase.store (phase, std::memory_order_relaxed); // [Mrpbm patch: plugin signal tap]
 
     delayBuffer.bufferPos = bufPos;
 }

@@ -32,10 +32,17 @@ public:
 
     juce::CachedValue<float> depth, rate, feedbackGain;
 
+    /** [Mrpbm patch: plugin signal tap] The all-pass sweep at the end of the last rendered block:
+        the stages' break frequency in Hz, and the LFO's place in its up-down cycle, [0, 1] with
+        0 at the bottom of the sweep and 0.5 at the top. Any thread. */
+    float getSweepHz() const noexcept       { return sweepHz.load (std::memory_order_relaxed); }
+    float getLfoPhase() const noexcept      { return lfoPhase.load (std::memory_order_relaxed); }
+
 private:
     //==============================================================================
     double filterVals[2][8];
     double sweep = 0.0, sweepFactor = 0.0, minSweep = 0.0;
+    std::atomic<float> sweepHz { 0.0f }, lfoPhase { 0.0f };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PhaserPlugin)
 };

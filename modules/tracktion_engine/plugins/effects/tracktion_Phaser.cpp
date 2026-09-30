@@ -35,6 +35,8 @@ void PhaserPlugin::initialise (const PluginInitialisationInfo& info)
     const float delayMs = 100.0f;
     sweep = minSweep = (juce::MathConstants<double>::pi * delayMs) / sampleRate;
     sweepFactor = 1.001f;
+    sweepHz.store (delayMs, std::memory_order_relaxed);
+    lfoPhase.store (0.0f, std::memory_order_relaxed);
 }
 
 void PhaserPlugin::deinitialise()
@@ -107,6 +109,12 @@ void PhaserPlugin::applyToBuffer (const PluginRenderContext& fc)
 
     sweep = swp;
     sweepFactor = swpFactor;
+
+    // [Mrpbm patch: plugin signal tap] swp = pi * f / sampleRate, swept up and down in log steps
+    const double logRange = std::log (range);
+    const double position = logRange > 0.0 ? juce::jlimit (0.0, 1.0, std::log (swp / minSweep) / logRange) : 0.0;
+    sweepHz.store ((float) (swp * sampleRate / juce::MathConstants<double>::pi), std::memory_order_relaxed);
+    lfoPhase.store ((float) (swpFactor >= 1.0 ? position * 0.5 : 1.0 - position * 0.5), std::memory_order_relaxed);
 }
 
 juce::String PhaserPlugin::getSelectableDescription()

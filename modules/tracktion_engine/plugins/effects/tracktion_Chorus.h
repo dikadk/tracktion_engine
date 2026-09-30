@@ -35,10 +35,15 @@ public:
 
     juce::CachedValue<float> depthMs, width, mixProportion, speedHz;
 
+    /** [Mrpbm patch: plugin signal tap] The left channel's LFO phase in radians [0, 2pi) at the
+        end of the last rendered block; the right channel leads it by pi * width. Any thread. */
+    float getLfoPhase() const noexcept      { return lfoPhase.load (std::memory_order_relaxed); }
+
 private:
     //==============================================================================
     DelayBufferBase delayBuffer;
     float phase = 0;
+    std::atomic<float> lfoPhase { 0.0f };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ChorusPlugin)
 };

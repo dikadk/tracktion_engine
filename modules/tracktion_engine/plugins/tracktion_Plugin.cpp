@@ -670,6 +670,12 @@ void Plugin::applyToBufferWithAutomation (const PluginRenderContext& pc)
 
     updateLastPlaybackTime();
 
+    // [Mrpbm patch: plugin signal tap]
+    auto tap = pc.destBuffer != nullptr ? signalTap.load (std::memory_order_acquire) : nullptr;
+
+    if (tap != nullptr)
+        tap->pluginInput (*pc.destBuffer, pc.bufferStartSample, pc.bufferNumSamples);
+
     if (isAutomationNeeded()
         && (arm.isReadingAutomation() || isClipEffect.load()))
     {
@@ -694,6 +700,22 @@ void Plugin::applyToBufferWithAutomation (const PluginRenderContext& pc)
         SCOPED_REALTIME_CHECK
         applyToBuffer (pc);
     }
+
+    if (tap != nullptr)
+        tap->pluginOutput (*pc.destBuffer, pc.bufferStartSample, pc.bufferNumSamples);
+}
+
+bool Plugin::setSignalTap (std::unique_ptr<SignalTap> newTap)
+{
+    TRACKTION_ASSERT_MESSAGE_THREAD
+    jassert (newTap != nullptr);
+
+    if (newTap == nullptr || signalTapOwner != nullptr)
+        return false;
+
+    signalTapOwner = std::move (newTap);
+    signalTap.store (signalTapOwner.get(), std::memory_order_release);
+    return true;
 }
 
 //==============================================================================
