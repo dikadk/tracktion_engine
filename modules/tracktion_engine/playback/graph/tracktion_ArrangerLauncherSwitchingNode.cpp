@@ -148,13 +148,40 @@ void ArrangerLauncherSwitchingNode::process (ProcessContext& pc)
     //      - Play the arranger
     //      - If we've just started playing the arranger, fade out the last slot samples and fade in the arranger
     const auto editBeatRange = getEditBeatRange();
-    const auto playArranger = ! track->playSlotClips.get();
+    const auto playArranger = track->isTransientArrangerPlayback() || ! track->playSlotClips.get();
     const auto slotStatus = getSlotsStatus (launcherNodes,
                                             editBeatRange,
                                             getProcessState().getSyncPoint().monotonicBeat);
 
     launcherSampleFader->apply (destAudioView, SampleFader::FadeType::fadeOut);
     arrangerSampleFader->apply (destAudioView, SampleFader::FadeType::fadeOut);
+
+    if (track->isTransientArrangerPlayback())
+    {
+        // Advance queued stops without rendering launcher notes/audio. A stopped
+        // launcher must still release voices already held by the track instrument.
+        bool releaseLauncherNotes = false;
+        for (auto& launcherNode : launcherNodes)
+        {
+            const auto& handle = launcherNode->getLaunchHandle();
+            const bool wasPlaying = handle.getPlayingStatus() == LaunchHandle::PlayState::playing;
+            const auto queued = handle.getQueuedStatus();
+            if (wasPlaying || queued == LaunchHandle::QueueState::playQueued
+                || queued == LaunchHandle::QueueState::stopQueued)
+            {
+                launcherNode->Node::process (pc.numSamples, pc.referenceSampleRange);
+                releaseLauncherNotes = releaseLauncherNotes
+                    || launcherNode->getProcessedOutput().midi.isAllNotesOff
+                    || (wasPlaying && handle.getPlayingStatus() != LaunchHandle::PlayState::playing);
+            }
+        }
+        launcherSampleFader->push (destAudioView);
+        processArranger (pc, {});
+        // Use the existing allocation-free termination flag. Apply it after the
+        // arranger merge, which may otherwise replace the destination flag.
+        pc.buffers.midi.isAllNotesOff = pc.buffers.midi.isAllNotesOff || releaseLauncherNotes;
+        return;
+    }
 
     processLauncher (pc, slotStatus);
 
@@ -324,6 +351,9 @@ void ArrangerLauncherSwitchingNode::sortPlayingOrQueuedClipsFirst()
 
 void ArrangerLauncherSwitchingNode::updatePlaySlotsState()
 {
+    if (track->isTransientArrangerPlayback())
+        return;
+
     for (auto& n : launcherNodesCopy)
     {
         if (auto lh = n->getLaunchHandleIfNotUnique())

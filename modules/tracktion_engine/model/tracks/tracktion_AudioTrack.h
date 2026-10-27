@@ -50,6 +50,10 @@ public:
     /** Determines if the track's arrange clips or clip slots should be audible. */
     juce::CachedValue<AtomicWrapper<bool>> playSlotClips;
 
+    /** Playback-only arranger override. Does not change the saved launcher mode. */
+    void setTransientArrangerPlayback (bool enabled) { transientArrangerPlayback.store (enabled, std::memory_order_relaxed); }
+    bool isTransientArrangerPlayback() const { return transientArrangerPlayback.load (std::memory_order_relaxed); }
+
     //==============================================================================
     /** returns a warning message about this track not being playable, or "" if it's ok */
     juce::String getTrackPlayabilityWarning() const;
@@ -211,6 +215,7 @@ private:
     friend class Clip;
 
     //==============================================================================
+    std::atomic<bool> transientArrangerPlayback { false };
     std::unique_ptr<TrackOutput> output;
     std::unique_ptr<WaveInputDevice> waveInputDevice;
     std::unique_ptr<MidiInputDevice> midiInputDevice;
