@@ -415,6 +415,10 @@ inline std::function<void (MonotonicBeat)> createFollowAction (std::shared_ptr<f
 
 std::function<void (MonotonicBeat)> createFollowAction (Clip& c)
 {
+    // Querying an unconfigured clip during graph creation must not add saved state.
+    if (! c.state.getChildWithName (IDs::FOLLOWACTIONS).isValid())
+        return {};
+
     auto followActions = c.getFollowActions();
 
     if (! followActions)
