@@ -820,6 +820,243 @@ private:
 #endif // TRACKTION_ENABLE_TIMESTRETCH_RUBBERBAND
 
 //==============================================================================
+#if TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH
+
+// Adapted for the pre-latency-query TimeStretcher API. All storage is prepared
+// in the constructor. The caller must serialise reset/parameter/process calls,
+// as for the other backends. Ratios are output duration / input duration.
+struct SignalsmithStretcher final : public TimeStretcher::Stretcher
+{
+    SignalsmithStretcher (double sampleRate, int blockSize, int channels,
+                          TimeStretcher::Mode mode)
+        : numChannels (channels), samplesPerOutputBuffer (blockSize)
+    {
+        // Bound arithmetic and reject invalid configurations before allocating.
+        if (! std::isfinite (sampleRate) || sampleRate < 1000.0 || sampleRate > 768000.0
+            || channels <= 0 || channels > 64 || blockSize <= 0 || blockSize > 1048576)
+            return;
+
+        // The old API's seek/drain contract requires completed spectra. Split
+        // computation leaves synthesis pending across calls, but upstream flush
+        // reads the live STFT output rather than the split output cursor. With
+        // this adapter that loses short transients and shifts EOF impulses.
+        // Use complete-spectrum processing for both realtime and offline calls;
+        // this changes CPU scheduling, not the allocation/blocking contract.
+        if (mode == TimeStretcher::signalsmithCheaper)
+            stretch.presetCheaper (channels, static_cast<float> (sampleRate), false);
+        else
+            stretch.presetDefault (channels, static_cast<float> (sampleRate), false);
+
+        inputLatency = stretch.inputLatency();
+        outputLatency = stretch.outputLatency();
+        maxFramesNeeded = inputLatency + static_cast<int> (std::ceil ((blockSize + outputLatency) / minSpeed)) + 1;
+        const int scratchSize = std::max (blockSize + outputLatency,
+                                          static_cast<int> (std::ceil (inputLatency * maxSpeed)) + outputLatency)
+                              + static_cast<int> (maxSpeed) + 2;
+        priming.setSize (channels, inputLatency);
+        output.setSize (channels, scratchSize);
+        inputPointers.resize (static_cast<size_t> (channels));
+        outputPointers.resize (static_cast<size_t> (channels));
+        valid = true;
+        reset();
+    }
+
+    bool isOk() const override { return valid; }
+
+    void reset() override
+    {
+        if (! valid)
+            return;
+
+        stretch.reset();
+        priming.clear();
+        output.clear();
+        primingFrames = bufferedFrames = 0;
+        outputToDrop = outputLatency;
+        inputFrames = targetFrames = emittedFrames = 0;
+        targetFraction = renderFraction = 0.0;
+        primed = flushing = false;
+        // Signalsmith reset preserves transpose; speedRatio is also preserved.
+    }
+
+    bool setSpeedAndPitch (float ratio, float semitones) override
+    {
+        if (! valid || flushing || ! std::isfinite (ratio) || ! std::isfinite (semitones)
+            || ratio < minSpeed || ratio > maxSpeed || semitones < -48.0f || semitones > 48.0f)
+            return false;
+
+        speedRatio = ratio;
+        stretch.setTransposeSemitones (semitones);
+        return true;
+    }
+
+    int getFramesNeeded() const override
+    {
+        if (! valid || flushing)
+            return 0;
+
+        const int prefill = primed ? 0 : inputLatency - primingFrames;
+        const double wanted = samplesPerOutputBuffer + outputToDrop - bufferedFrames - renderFraction;
+        return prefill + std::max (0, static_cast<int> (std::ceil (wanted / speedRatio)));
+    }
+
+    int getMaxFramesNeeded() const override { return maxFramesNeeded; }
+
+    int processData (const float* const* inChannels, int numSamples, float* const* outChannels) override
+    {
+        if (! valid || flushing || numSamples < 0 || numSamples > getFramesNeeded()
+            || ! validChannels (outChannels) || (numSamples > 0 && ! validChannels (inChannels)))
+            return 0;
+
+        const juce::ScopedNoDenormals noDenormals;
+        inputFrames += numSamples;
+        const double target = targetFraction + numSamples * speedRatio;
+        const auto wholeTarget = static_cast<int64_t> (std::floor (target));
+        targetFrames += wholeTarget;
+        targetFraction = target - static_cast<double> (wholeTarget);
+
+        int consumed = 0;
+        if (! primed)
+        {
+            consumed = std::min (numSamples, inputLatency - primingFrames);
+            for (int c = 0; c < numChannels; ++c)
+                if (consumed > 0)
+                    priming.copyFrom (c, primingFrames, inChannels[c], consumed);
+            primingFrames += consumed;
+
+            if (primingFrames < inputLatency)
+                return 0;
+
+            prime();
+        }
+
+        const int remaining = numSamples - consumed;
+        if (remaining > 0)
+        {
+            const double rendered = renderFraction + remaining * speedRatio;
+            const int toRender = static_cast<int> (std::floor (rendered));
+            renderFraction = rendered - toRender;
+            for (int c = 0; c < numChannels; ++c)
+                inputPointers[static_cast<size_t> (c)] = inChannels[c] + consumed;
+            pointOutputAt (bufferedFrames);
+            stretch.process (inputPointers.data(), remaining, outputPointers.data(), toRender);
+            bufferedFrames += toRender;
+        }
+
+        discardLatency();
+        return readOutput (outChannels);
+    }
+
+    int flush (float* const* outChannels) override
+    {
+        if (! valid || ! validChannels (outChannels))
+            return 0;
+
+        const juce::ScopedNoDenormals noDenormals;
+        if (! flushing)
+        {
+            flushing = true;
+            if (inputFrames == 0)
+                return 0;
+
+            // Short sources are padded only for analysis; the returned duration
+            // is still round(real input * ratio), with no leading latency.
+            if (! primed)
+                prime();
+
+            targetFrames += targetFraction >= 0.5 ? 1 : 0;
+            const int remaining = static_cast<int> (targetFrames - emittedFrames);
+            const int tailFrames = std::max (0, remaining - bufferedFrames + outputToDrop - outputLatency);
+            pointOutputAt (bufferedFrames);
+            stretch.process (Silence{}, static_cast<int> (std::min<int64_t> (inputFrames, inputLatency)),
+                             outputPointers.data(), tailFrames);
+            bufferedFrames += tailFrames;
+
+            // Upstream flush resets its synthesis state. Call it exactly once,
+            // for the complete output latency, then drain in caller-sized chunks.
+            pointOutputAt (bufferedFrames);
+            stretch.flush (outputPointers.data(), outputLatency);
+            bufferedFrames += outputLatency;
+            discardLatency();
+            bufferedFrames = std::min (bufferedFrames, remaining);
+        }
+
+        return readOutput (outChannels);
+    }
+
+private:
+    struct Silence
+    {
+        struct Channel { float operator[] (int) const { return 0.0f; } };
+        Channel operator[] (int) const { return {}; }
+    };
+
+    template<typename Sample>
+    bool validChannels (Sample* const* pointers) const
+    {
+        if (pointers == nullptr)
+            return false;
+        for (int c = 0; c < numChannels; ++c)
+            if (pointers[c] == nullptr)
+                return false;
+        return true;
+    }
+
+    void prime()
+    {
+        stretch.seek (priming.getArrayOfReadPointers(), inputLatency, 1.0 / speedRatio);
+        primed = true;
+    }
+
+    void pointOutputAt (int offset)
+    {
+        for (int c = 0; c < numChannels; ++c)
+            outputPointers[static_cast<size_t> (c)] = output.getWritePointer (c, offset);
+    }
+
+    void removeOutput (int count)
+    {
+        bufferedFrames -= count;
+        for (int c = 0; c < numChannels; ++c)
+            std::memmove (output.getWritePointer (c), output.getReadPointer (c, count),
+                          static_cast<size_t> (bufferedFrames) * sizeof (float));
+    }
+
+    void discardLatency()
+    {
+        const int count = std::min (outputToDrop, bufferedFrames);
+        outputToDrop -= count;
+        removeOutput (count);
+    }
+
+    int readOutput (float* const* outChannels)
+    {
+        const int count = std::min (samplesPerOutputBuffer, bufferedFrames);
+        for (int c = 0; c < numChannels; ++c)
+            juce::FloatVectorOperations::copy (outChannels[c], output.getReadPointer (c), count);
+        emittedFrames += count;
+        removeOutput (count);
+        return count;
+    }
+
+    static constexpr double minSpeed = 0.125, maxSpeed = 8.0;
+    signalsmith::stretch::SignalsmithStretch<float> stretch;
+    juce::AudioBuffer<float> priming, output;
+    std::vector<const float*> inputPointers;
+    std::vector<float*> outputPointers;
+    const int numChannels, samplesPerOutputBuffer;
+    int inputLatency = 0, outputLatency = 0, maxFramesNeeded = 0;
+    int primingFrames = 0, bufferedFrames = 0, outputToDrop = 0;
+    int64_t inputFrames = 0, targetFrames = 0, emittedFrames = 0;
+    double speedRatio = 1.0, targetFraction = 0.0, renderFraction = 0.0;
+    bool valid = false, primed = false, flushing = false;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SignalsmithStretcher)
+};
+
+#endif // TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH
+
+//==============================================================================
 TimeStretcher::TimeStretcher() {}
 TimeStretcher::~TimeStretcher() {}
 
@@ -835,6 +1072,8 @@ static juce::String getRubberBandPercussive()       { return "RubberBand (" + TR
 static juce::String getElastiqueDirectPro()         { return "Elastique Direct (" + TRANS("Pro") + ")"; }
 static juce::String getElastiqueDirectEfficeint()   { return "Elastique Direct (" + TRANS("Efficient") + ")"; }
 static juce::String getElastiqueDirectMobile()      { return "Elastique Direct (" + TRANS("Mobile") + ")"; }
+static juce::String getSignalsmithDefault()          { return "Signalsmith (" + TRANS("Default") + ")"; }
+static juce::String getSignalsmithCheaper()          { return "Signalsmith (" + TRANS("Cheaper") + ")"; }
 
 TimeStretcher::Mode TimeStretcher::checkModeIsAvailable (Mode m)
 {
@@ -859,7 +1098,16 @@ TimeStretcher::Mode TimeStretcher::checkModeIsAvailable (Mode m)
         case rubberbandMelodic:
         case rubberbandPercussive:
        #endif
+       #if ! TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH
+        case signalsmithDefault:
+        case signalsmithCheaper:
+       #endif
             return defaultMode;
+       #if TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH
+        case signalsmithDefault:
+        case signalsmithCheaper:
+            return m;
+       #endif
        #if TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH
         case soundtouchNormal:
         case soundtouchBetter:
@@ -890,6 +1138,11 @@ TimeStretcher::Mode TimeStretcher::checkModeIsAvailable (Mode m)
 juce::StringArray TimeStretcher::getPossibleModes (Engine& e, bool excludeMelodyne)
 {
     juce::StringArray s;
+
+   #if TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH
+    s.add (getSignalsmithDefault());
+    s.add (getSignalsmithCheaper());
+   #endif
 
    #if TRACKTION_ENABLE_TIMESTRETCH_ELASTIQUE
     s.add (getElastiquePro());
@@ -923,6 +1176,11 @@ juce::StringArray TimeStretcher::getPossibleModes (Engine& e, bool excludeMelody
 
 TimeStretcher::Mode TimeStretcher::getModeFromName (Engine& e, const juce::String& name)
 {
+   #if TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH
+    if (name == getSignalsmithDefault())         return signalsmithDefault;
+    if (name == getSignalsmithCheaper())         return signalsmithCheaper;
+   #endif
+
    #if TRACKTION_ENABLE_TIMESTRETCH_ELASTIQUE
     if (name == getElastiquePro())              return elastiquePro;
     if (name == getElastiqueEfficeint())        return elastiqueEfficient;
@@ -966,6 +1224,8 @@ juce::String TimeStretcher::getNameOfMode (const Mode mode)
         case soundtouchBetter:          return getSoundTouchBetter();
         case rubberbandMelodic:         return getRubberBandMelodic();
         case rubberbandPercussive:      return getRubberBandPercussive();
+        case signalsmithDefault:        return getSignalsmithDefault();
+        case signalsmithCheaper:        return getSignalsmithCheaper();
         case melodyne:                  return getMelodyne();
         case disabled:
         case elastiqueTransient:
@@ -1002,9 +1262,20 @@ void TimeStretcher::initialise (double sourceSampleRate, int samplesPerBlock,
     CRASH_TRACER
     jassert (stretcher == nullptr);
 
-   #if TRACKTION_ENABLE_TIMESTRETCH_ELASTIQUE || TRACKTION_ENABLE_TIMESTRETCH_RUBBERBAND || TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH
+   #if TRACKTION_ENABLE_TIMESTRETCH_ELASTIQUE || TRACKTION_ENABLE_TIMESTRETCH_RUBBERBAND || TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH || TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH
     switch (mode)
     {
+       #if TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH
+        case signalsmithDefault:
+        case signalsmithCheaper:
+            stretcher = std::make_unique<SignalsmithStretcher> (sourceSampleRate, samplesPerBlock, numChannels, mode);
+            break;
+       #else
+        case signalsmithDefault: [[fallthrough]];
+        case signalsmithCheaper:
+            break;
+       #endif
+
        #if TRACKTION_ENABLE_TIMESTRETCH_ELASTIQUE
         case elastiquePro:
         case elastiqueEfficient:

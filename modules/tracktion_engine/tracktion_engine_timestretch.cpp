@@ -68,17 +68,29 @@
 
 #include <tracktion_core/tracktion_TestConfig.h>
 
+#if TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH
+ // This vendored subset uses Signalsmith Linear's built-in, header-only FFT.
+ #if defined(SIGNALSMITH_USE_ACCELERATE) || defined(SIGNALSMITH_USE_IPP) || defined(SIGNALSMITH_USE_PFFFT) || defined(SIGNALSMITH_USE_PFFFT_DOUBLE) || defined(SIGNALSMITH_USE_CMSISDSP) || defined(SIGNALSMITH_USE_XSIMD)
+  #error This Signalsmith backport requires the built-in FFT; external FFT dependencies are not vendored.
+ #endif
+ #include "3rd_party/signalsmith-stretch/signalsmith-stretch.h"
+#endif
+
 #include "timestretch/tracktion_TimeStretch.cpp"
 #include "timestretch/tracktion_TimeStretch.test.cpp"
 #include "timestretch/tracktion_ReadAheadTimeStretcher.cpp"
 
 namespace tracktion { inline namespace engine
 {
+   #if TRACKTION_ENABLE_SOUNDTOUCH_BPM
     #include "3rd_party/soundtouch/source/SoundTouch/BPMDetect.cpp"
     #undef max
     #include "3rd_party/soundtouch/source/SoundTouch/PeakFinder.cpp"
     #undef max
+   #endif
+   #if TRACKTION_ENABLE_SOUNDTOUCH_BPM || TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH
     #include "3rd_party/soundtouch/source/SoundTouch/FIFOSampleBuffer.cpp"
+   #endif
 
    #if TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH
     #include "3rd_party/soundtouch/source/SoundTouch/AAFilter.cpp"

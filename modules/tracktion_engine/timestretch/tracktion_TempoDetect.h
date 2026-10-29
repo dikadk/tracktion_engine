@@ -37,7 +37,9 @@ namespace tracktion { inline namespace engine
  #pragma GCC diagnostic ignored "-Wunknown-pragmas"
 #endif
 
-#include "../3rd_party/soundtouch/include/BPMDetect.h"
+#if TRACKTION_ENABLE_SOUNDTOUCH_BPM
+ #include "../3rd_party/soundtouch/include/BPMDetect.h"
+#endif
 
 #ifdef __clang__
  #pragma clang diagnostic pop
@@ -54,9 +56,14 @@ class TempoDetect
 {
 public:
     TempoDetect (int numChannels_, double sampleRate)
-        : numChannels (numChannels_),
-          bpmDetect (numChannels, (int) sampleRate)
+        : numChannels (numChannels_)
+         #if TRACKTION_ENABLE_SOUNDTOUCH_BPM
+          , bpmDetect (numChannels, (int) sampleRate)
+         #endif
     {
+       #if ! TRACKTION_ENABLE_SOUNDTOUCH_BPM
+        juce::ignoreUnused (sampleRate);
+       #endif
     }
 
     /** Processes an entire AudioFormatReader returning the tempo for it.
@@ -64,6 +71,10 @@ public:
     */
     float processReader (juce::AudioFormatReader& reader)
     {
+       #if ! TRACKTION_ENABLE_SOUNDTOUCH_BPM
+        juce::ignoreUnused (reader);
+        return finishAndDetect();
+       #else
         jassert ((int) reader.numChannels == numChannels);
 
         const SampleCount blockSize = 65536;
@@ -86,6 +97,7 @@ public:
         }
 
         return finishAndDetect();
+       #endif
     }
 
     /** Processes a block of audio returning the tempo for it.
@@ -95,7 +107,7 @@ public:
     {
         processSection (inputSamples, numSamples);
 
-        return bpm = bpmDetect.getBpm();
+        return finishAndDetect();
     }
 
     /** Returns the last BPM detected. */
@@ -114,11 +126,16 @@ public:
     /** Completes the detection process and returns the BPM. */
     float finishAndDetect()
     {
+       #if TRACKTION_ENABLE_SOUNDTOUCH_BPM
         return bpm = bpmDetect.getBpm();
+       #else
+        return bpm = 0.0f;
+       #endif
     }
 
     void processSection (const float* const* inputSamples, int numSamples)
     {
+       #if TRACKTION_ENABLE_SOUNDTOUCH_BPM
         AudioScratchBuffer scratch (1, numChannels * numSamples);
         float* interleaved = scratch.buffer.getWritePointer (0);
 
@@ -128,12 +145,17 @@ public:
                                             numSamples);
 
         bpmDetect.inputSamples (interleaved, numSamples);
+       #else
+        juce::ignoreUnused (inputSamples, numSamples);
+       #endif
     }
 
 private:
     //==============================================================================
     int numChannels;
+   #if TRACKTION_ENABLE_SOUNDTOUCH_BPM
     soundtouch::BPMDetect bpmDetect;
+   #endif
     float bpm = -1.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TempoDetect)

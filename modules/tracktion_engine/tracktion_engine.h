@@ -167,6 +167,22 @@
  #define TRACKTION_ENABLE_TIMESTRETCH_RUBBERBAND 0
 #endif
 
+/** Config: TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH
+    Enables the vendored MIT-licensed Signalsmith Stretch backend.
+    Disabled by default; see 3rd_party/signalsmith-stretch/UPSTREAM.md for pins and notices.
+*/
+#ifndef TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH
+ #define TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH 0
+#endif
+
+/** Config: TRACKTION_ENABLE_SOUNDTOUCH_BPM
+    Enables the SoundTouch-based audio tempo detector independently of stretching.
+    Disabled callers receive an unknown tempo (0 BPM); metadata remains available.
+*/
+#ifndef TRACKTION_ENABLE_SOUNDTOUCH_BPM
+ #define TRACKTION_ENABLE_SOUNDTOUCH_BPM 1
+#endif
+
 /** Config: TRACKTION_BUILD_RUBBERBAND
     Builds the RubberBand library from source inside your binary.
     This can be useful if you don't want to build it as a static library and
